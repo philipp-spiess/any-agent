@@ -1,24 +1,17 @@
-# tsdown-starter
+# any-agent workspace
 
-A starter for creating a TypeScript package.
+This repository is organized as a Bun workspaces monorepo. The existing CLI now lives in [`packages/any-agent`](packages/any-agent), preserving its original package metadata and build tooling.
 
-## Development
+To install dependencies for all packages, run:
 
-- Install dependencies:
-
-```bash
-npm install
+```sh
+bun install
 ```
 
-- Run the unit tests:
+From there you can run package scripts with Bun's workspace filter flag. For example, to run tests for the CLI package:
 
-```bash
-npm run test
+```sh
+bun run --filter any-agent test
 ```
 
-- Build the library:
-
-```bash
-npm run build
-```
-# any-agent
+See the package README for detailed usage instructions.
