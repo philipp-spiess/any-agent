@@ -1,5 +1,4 @@
 import { pathToFileURL } from 'node:url'
-import React from 'react'
 import { render } from 'ink'
 import { getSessions } from './codex'
 import { resumeSession } from './resume'

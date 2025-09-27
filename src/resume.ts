@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import type { ChildProcess, SpawnOptionsWithoutStdio } from 'node:child_process'
+import type { ChildProcess, SpawnOptions } from 'node:child_process'
 
 export interface ResumeSessionOptions {
   binary?: string
@@ -10,7 +10,7 @@ export interface ResumeSessionOptions {
   spawnImpl?: (
     command: string,
     args: ReadonlyArray<string>,
-    options: SpawnOptionsWithoutStdio,
+    options: SpawnOptions,
   ) => ChildProcess
   forwardSignals?: NodeJS.Signals[]
 }
@@ -50,7 +50,7 @@ export async function resumeSession(
     ...extraArgs,
   ]
 
-  const spawnOptions: SpawnOptionsWithoutStdio = {
+  const spawnOptions: SpawnOptions = {
     stdio: 'inherit',
     env,
   }
