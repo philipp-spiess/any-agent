@@ -3,7 +3,7 @@ import { defineConfig } from 'tsdown'
 export default defineConfig([
   {
     entry: ['./src/index.tsx'],
-    platform: 'neutral',
+    platform: 'node',
     dts: true,
   },
 ])

@@ -5,23 +5,24 @@
   "description": "Manage all your coding agents in one place",
   "type": "module",
   "license": "MIT",
-  "homepage": "https://github.com/philipp-spies/any-agent#readme",
+  "homepage": "https://github.com/philipp-spiess/any-agent#readme",
   "bugs": {
-    "url": "https://github.com/philipp-spies/any-agent/issues"
+    "url": "https://github.com/philipp-spiess/any-agent/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/philipp-spies/any-agent.git"
+    "url": "git+https://github.com/philipp-spiess/any-agent.git"
   },
   "author": "Philipp Spiess <hi@spiess.dev>",
   "files": [
-    "dist"
+    "dist",
+    "bin"
   ],
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "resume": "./dist/index.js"
+    "resume": "./bin/resume.js"
   },
   "exports": {
     ".": "./dist/index.js",

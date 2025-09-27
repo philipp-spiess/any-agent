@@ -7,7 +7,7 @@ import SessionPicker from './ui/SessionPicker'
 
 export { getSessions }
 
-async function main() {
+export async function main() {
   try {
     const { sessions, totalBlendedTokens, totalCostUsd } = await getSessions()
     let selectedSessionId: string | null = null
