@@ -1,4 +1,5 @@
 import { createReadStream } from 'node:fs'
+import type { Stats } from 'node:fs'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -75,7 +76,7 @@ export async function getSessions(options: GetSessionsOptions = {}): Promise<Ses
 
   const sessionsRoot = path.join(codexHome, 'sessions')
 
-  let rootStats: fs.Stats | undefined
+  let rootStats: Stats | undefined
   try {
     rootStats = await fs.stat(sessionsRoot)
   } catch (error) {
@@ -182,11 +183,12 @@ export async function getSessions(options: GetSessionsOptions = {}): Promise<Ses
 
   const pricingFetcher =
     providedPricingFetcher ??
-    new LiteLLMPricingFetcher(
-      pricingOfflineData
-        ? { offline: true, offlineLoader: async () => pricingOfflineData }
-        : {},
-    )
+    (pricingOfflineData
+      ? new LiteLLMPricingFetcher({
+          offline: true,
+          offlineLoader: async () => pricingOfflineData,
+        })
+      : defaultPricingFetcher)
 
   const pricingCache = new Map<string, LiteLLMModelPricing | null>()
   let totalCostUsd = 0
@@ -674,10 +676,20 @@ type TokenCountRecord = {
   payload: {
     type: 'token_count'
     info?: {
+      last_token_usage?: {
+        input_tokens?: number
+        cached_input_tokens?: number
+        cache_read_input_tokens?: number
+        output_tokens?: number
+        reasoning_output_tokens?: number
+        total_tokens?: number
+      }
       total_token_usage?: {
         input_tokens?: number
         cached_input_tokens?: number
+        cache_read_input_tokens?: number
         output_tokens?: number
+        reasoning_output_tokens?: number
         total_tokens?: number
       }
     }
