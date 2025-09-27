@@ -1,19 +1,19 @@
 {
-  "name": "tsdown-starter",
+  "name": "any-agent",
   "version": "0.0.1",
   "packageManager": "bun@1.2.22",
-  "description": "A starter for creating a TypeScript package.",
+  "description": "Manage all your coding agents in one place",
   "type": "module",
   "license": "MIT",
-  "homepage": "https://github.com/author/library#readme",
+  "homepage": "https://github.com/philipp-spies/any-agent#readme",
   "bugs": {
-    "url": "https://github.com/author/library/issues"
+    "url": "https://github.com/philipp-spies/any-agent/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/author/library.git"
+    "url": "git+https://github.com/philipp-spies/any-agent.git"
   },
-  "author": "Author Name <author.name@mail.com>",
+  "author": "Philipp Spiess <hi@spiess.dev>",
   "files": [
     "dist"
   ],
