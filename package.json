@@ -1,6 +1,6 @@
 {
   "name": "any-agent",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "packageManager": "bun@1.2.22",
   "description": "Manage all your coding agents in one place",
   "type": "module",
