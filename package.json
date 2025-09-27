@@ -1,6 +1,7 @@
 {
   "name": "tsdown-starter",
-  "version": "0.0.0",
+  "version": "0.0.1",
+  "packageManager": "bun@1.2.22",
   "description": "A starter for creating a TypeScript package.",
   "type": "module",
   "license": "MIT",
@@ -19,6 +20,9 @@
   "main": "./dist/index.js",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "bin": {
+    "resume": "./dist/index.js"
+  },
   "exports": {
     ".": "./dist/index.js",
     "./package.json": "./package.json"
@@ -31,7 +35,7 @@
     "dev": "tsdown --watch",
     "test": "vitest",
     "typecheck": "tsc --noEmit",
-    "release": "bumpp && npm publish"
+    "release": "bunx bumpp && bun publish"
   },
   "devDependencies": {
     "@types/node": "^22.15.17",
