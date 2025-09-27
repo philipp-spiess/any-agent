@@ -1,55 +1,8 @@
 {
-  "name": "any-agent",
-  "version": "0.0.2",
+  "name": "any-agent-workspace",
+  "private": true,
   "packageManager": "bun@1.2.22",
-  "description": "Manage all your coding agents in one place",
-  "type": "module",
-  "license": "MIT",
-  "homepage": "https://github.com/philipp-spiess/any-agent#readme",
-  "bugs": {
-    "url": "https://github.com/philipp-spiess/any-agent/issues"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/philipp-spiess/any-agent.git"
-  },
-  "author": "Philipp Spiess <hi@spiess.dev>",
-  "files": [
-    "dist",
-    "bin"
-  ],
-  "main": "./dist/index.js",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "bin": {
-    "resume": "./bin/resume.js"
-  },
-  "exports": {
-    ".": "./dist/index.js",
-    "./package.json": "./package.json"
-  },
-  "publishConfig": {
-    "access": "public"
-  },
-  "scripts": {
-    "build": "tsdown",
-    "dev": "tsdown --watch",
-    "test": "vitest",
-    "typecheck": "tsc --noEmit",
-    "release": "bunx bumpp && bun publish"
-  },
-  "devDependencies": {
-    "@types/node": "^22.15.17",
-    "@types/react": "^19.1.14",
-    "bumpp": "^10.1.0",
-    "tsdown": "^0.11.9",
-    "typescript": "^5.8.3",
-    "vitest": "^3.1.3"
-  },
-  "dependencies": {
-    "ink": "^6.3.1",
-    "ink-enhanced-select-input": "^0.2.0",
-    "react": "^19.1.1",
-    "valibot": "^1.1.0"
-  }
+  "workspaces": [
+    "packages/*"
+  ]
 }
