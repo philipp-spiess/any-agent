@@ -210,7 +210,7 @@ export const SessionPicker: React.FC<SessionPickerProps> = ({
         </>
       ) : (
         <Box marginTop={1}>
-          <Text color={MESSAGE_COLOR}>No Codex sessions found.</Text>
+          <Text color={MESSAGE_COLOR}>No agent sessions found.</Text>
         </Box>
       )}
       <StatusLine totalTokens={totalTokens} totalCost={totalCost} />
@@ -231,17 +231,21 @@ const SessionRow: React.FC<SessionRowProps> = ({
   homeDir,
   layout,
 }) => {
-  const repoPath = formatPath(session.meta?.cwd ?? ".", homeDir);
+  const meta = session.meta ?? {};
+  const cwdValue = typeof meta.cwd === "string" ? meta.cwd : undefined;
+  const projectPathValue =
+    typeof (meta as Record<string, unknown>).projectPath === "string"
+      ? ((meta as Record<string, unknown>).projectPath as string)
+      : undefined;
+  const cwd = cwdValue ?? projectPathValue ?? ".";
+  const repoPath = formatPath(cwd, homeDir);
   const timestamp = pad(
     truncate(session.relativeTime, layout.timeWidth),
     layout.timeWidth
   );
-  const modelName = session.model ? session.model : "unknown";
+  const modelLabel = formatModelLabel(session);
   const modelColumn = layout.showModel
-    ? pad(
-        truncate(`Codex (${modelName})`, layout.modelWidth),
-        layout.modelWidth
-      )
+    ? pad(truncate(modelLabel, layout.modelWidth), layout.modelWidth)
     : "";
   const tokensLabel =
     session.blendedTokens > 0
@@ -471,6 +475,31 @@ function pad(value: string, width: number): string {
     return value;
   }
   return value.padEnd(width, " ");
+}
+
+function formatModelLabel(session: SessionSummary): string {
+  if (session.source === "claude-code") {
+    const formattedModel = formatClaudeCodeModel(session.model);
+    return `Claude Code (${formattedModel})`;
+  }
+  const modelName = session.model ?? "unknown";
+  return `Codex (${modelName})`;
+}
+
+function formatClaudeCodeModel(model: string | null | undefined): string {
+  if (typeof model !== "string" || model.trim().length === 0) {
+    return "unknown";
+  }
+  const trimmed = model.trim();
+  const withoutProvider = trimmed.replace(/^[^/]+\//, "");
+  const match = withoutProvider.match(/claude[-_](.+)/i);
+  if (match && match[1]) {
+    const candidate = match[1].trim();
+    if (candidate.length > 0) {
+      return candidate;
+    }
+  }
+  return withoutProvider.length > 0 ? withoutProvider : trimmed;
 }
 
 function formatSiSuffix(n: number): string {

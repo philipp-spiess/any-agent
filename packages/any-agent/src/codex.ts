@@ -19,6 +19,7 @@ type SessionMetaPayload = {
 
 export interface SessionSummary {
   id: string
+  source: 'codex' | 'claude-code'
   path: string
   timestamp: Date
   timestampUtc: string
@@ -144,6 +145,7 @@ export async function getSessions(options: GetSessionsOptions = {}): Promise<Ses
 
           sessions.push({
             id,
+            source: 'codex',
             path: file.path,
             timestamp,
             timestampUtc: timestamp.toISOString(),
@@ -718,7 +720,7 @@ export function blendedTokenTotal(usage: TokenUsage): number {
   return nonCached + usage.outputTokens + usage.reasoningOutputTokens
 }
 
-function markForkedSessions(sessions: SessionSummary[]): void {
+export function markForkedSessions(sessions: SessionSummary[]): void {
   const signatureMap = new Map<string, SessionSummary[]>()
 
   for (const session of sessions) {
@@ -784,7 +786,7 @@ function setBranchMarkers(group: SessionSummary[]): void {
   })
 }
 
-function orderSessionsByBranch(sessions: SessionSummary[]): SessionSummary[] {
+export function orderSessionsByBranch(sessions: SessionSummary[]): SessionSummary[] {
   const groupsMap = new Map<string, { sessions: SessionSummary[]; maxTimestamp: number }>()
   const singles: SessionSummary[] = []
 
