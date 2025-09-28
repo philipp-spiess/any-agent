@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Box, Text, useApp, useInput, useStdout } from "ink";
+import { BarChart, Sparkline, type BarChartData } from "@pppp606/ink-chart";
 import os from "node:os";
 import path from "node:path";
 import type { SessionSummary } from "../codex";
@@ -115,11 +116,28 @@ export const SessionPicker: React.FC<SessionPickerProps> = ({
   const columns = stdoutColumns ?? 80;
   const rows = stdoutRows ?? 24;
   const layout = useMemo(() => computeLayout(columns), [columns]);
+  const chartMetrics = useMemo(
+    () => computeChartMetrics(sessions, columns),
+    [sessions, columns]
+  );
+  const hasSparkline = chartMetrics.sparkline.hasActivity;
+  const hasProviderBars = chartMetrics.providerBars.length > 0;
+  const showCharts = hasSparkline || hasProviderBars;
 
   const homeDir = useMemo(() => os.homedir(), []);
   const hasSessions = sessions.length > 0;
+  const headerSummary = useMemo(() => {
+    const parts = ["Agent History"];
+    if (totalTokens > 0) {
+      parts.push(`${formatSiSuffix(totalTokens)} total tokens`);
+    }
+    if (totalCost > 0) {
+      parts.push(`${formatUsd(totalCost)} total costs`);
+    }
+    return parts.join(" · ");
+  }, [totalCost, totalTokens]);
   const availableHeight = Math.max(
-    rows - HEADER_FOOTPRINT - STATUS_LINE_FOOTPRINT,
+    rows - HEADER_FOOTPRINT - STATUS_LINE_FOOTPRINT - chartMetrics.footprint,
     1
   );
   const limit = hasSessions
@@ -194,13 +212,42 @@ export const SessionPicker: React.FC<SessionPickerProps> = ({
 
   return (
     <Box flexDirection="column">
-      <Text color={MESSAGE_COLOR}>Agent History</Text>
-      <Text color={MESSAGE_COLOR}> </Text>
+      <Text color={MESSAGE_COLOR}>{headerSummary}</Text>
+      {showCharts ? (
+        <Box flexDirection="column">
+          {hasSparkline ? (
+            <>
+              <Text color={HEADER_COLOR}>
+                {`Last ${chartMetrics.sparkline.dayCount} days · ${formatSiSuffix(chartMetrics.sparkline.totalTokens)} tok${chartMetrics.sparkline.peakDay ? ` · peak ${chartMetrics.sparkline.peakDay}` : ""}`}
+              </Text>
+              <Box width={Math.max(columns, 1)} justifyContent="flex-end">
+                <Sparkline
+                  data={chartMetrics.sparkline.points}
+                  width={Math.max(chartMetrics.sparkline.points.length, 1)}
+                  colorScheme="blue"
+                />
+              </Box>
+            </>
+          ) : null}
+          {hasProviderBars ? (
+            <>
+              <Text color={HEADER_COLOR}>Tokens by provider</Text>
+              <BarChart
+                data={chartMetrics.providerBars}
+                width={Math.max(columns, 1)}
+                sort="desc"
+                showValue="right"
+                format={(value) => `${formatSiSuffix(value)} tokens`}
+              />
+            </>
+          ) : null}
+        </Box>
+      ) : null}
       {hasSessions ? (
         <>
           {visibleSessions.map(({ session, absoluteIndex }) => (
             <SessionRow
-              key={session.path}
+              key={session.id}
               session={session}
               isSelected={absoluteIndex === highlightedIndex}
               homeDir={homeDir}
@@ -213,7 +260,7 @@ export const SessionPicker: React.FC<SessionPickerProps> = ({
           <Text color={MESSAGE_COLOR}>No agent sessions found.</Text>
         </Box>
       )}
-      <StatusLine totalTokens={totalTokens} totalCost={totalCost} />
+      <StatusLine />
     </Box>
   );
 };
@@ -416,25 +463,8 @@ const columnIsVisible = (layout: TableLayout, key: ColumnKey): boolean => {
   return true;
 };
 
-const StatusLine: React.FC<{ totalTokens: number; totalCost: number }> = ({
-  totalTokens,
-  totalCost,
-}) => (
+const StatusLine: React.FC = () => (
   <Box marginTop={1}>
-    <Text>
-      <Text color={KEY_COLOR}>{formatSiSuffix(totalTokens)}</Text>
-      <Text> total tokens</Text>
-    </Text>
-    {totalCost > 0 ? (
-      <>
-        <Text>  </Text>
-        <Text>
-          <Text color={KEY_COLOR}>{formatUsd(totalCost)}</Text>
-          <Text> total costs</Text>
-        </Text>
-      </>
-    ) : null}
-    <Text>  </Text>
     <Text color={KEY_COLOR}>⏎ </Text>
     <Text>resume</Text>
   </Box>
@@ -554,6 +584,148 @@ function clampOffset(value: number, maxOffset: number): number {
     return maxOffset;
   }
   return value;
+}
+
+interface SparklineMetrics {
+  points: number[];
+  totalTokens: number;
+  peakDay: string | null;
+  dayCount: number;
+  hasActivity: boolean;
+}
+
+interface ChartMetrics {
+  sparkline: SparklineMetrics;
+  providerBars: BarChartData[];
+  footprint: number;
+}
+
+function computeChartMetrics(
+  sessions: SessionSummary[],
+  columns: number
+): ChartMetrics {
+  const dayCount = Math.max(1, columns);
+  const sparkline = computeSparklineSeries(sessions, dayCount);
+  const providerBars = computeProviderBars(sessions);
+
+  let footprint = 0;
+  if (sparkline.hasActivity) {
+    footprint += 2; // label + sparkline
+  }
+  if (providerBars.length > 0) {
+    footprint += 1 + providerBars.length; // label + each bar row
+  }
+
+  return {
+    sparkline,
+    providerBars,
+    footprint,
+  };
+}
+
+function computeSparklineSeries(
+  sessions: SessionSummary[],
+  dayCount: number
+): SparklineMetrics {
+  if (dayCount <= 0) {
+    return { points: [], totalTokens: 0, peakDay: null, dayCount: 0, hasActivity: false };
+  }
+
+  const today = startOfDay(new Date());
+  const labels: Date[] = [];
+  const points: number[] = [];
+  const keyToIndex = new Map<string, number>();
+
+  for (let i = dayCount - 1; i >= 0; i -= 1) {
+    const day = new Date(today);
+    day.setDate(today.getDate() - i);
+    labels.push(day);
+    points.push(0);
+    keyToIndex.set(formatDateKey(day), labels.length - 1);
+  }
+
+  for (const session of sessions) {
+    const key = formatDateKey(session.timestamp);
+    const index = keyToIndex.get(key);
+    if (typeof index === "number") {
+      points[index] += session.blendedTokens;
+    }
+  }
+
+  let maxTokens = 0;
+  let maxIndex = -1;
+  for (let i = 0; i < points.length; i += 1) {
+    const value = points[i];
+    if (value > maxTokens) {
+      maxTokens = value;
+      maxIndex = i;
+    }
+  }
+
+  const totalTokens = points.reduce((acc, value) => acc + value, 0);
+  const peakDay = maxTokens > 0 && maxIndex >= 0 ? formatDayLabel(labels[maxIndex]) : null;
+  const hasActivity = maxTokens > 0;
+
+  return { points, totalTokens, peakDay, dayCount, hasActivity };
+}
+
+function computeProviderBars(sessions: SessionSummary[]): BarChartData[] {
+  const buckets: Record<SessionSummary["source"], {
+    label: string;
+    tokens: number;
+    messages: number;
+    color: string;
+  }> = {
+    codex: {
+      label: "Codex",
+      tokens: 0,
+      messages: 0,
+      color: KEY_COLOR,
+    },
+    "claude-code": {
+      label: "Claude Code",
+      tokens: 0,
+      messages: 0,
+      color: "#f97316",
+    },
+  };
+
+  for (const session of sessions) {
+    const bucket = buckets[session.source];
+    if (!bucket) {
+      continue;
+    }
+    bucket.tokens += session.blendedTokens;
+    bucket.messages += Math.max(0, session.messageCount ?? 0);
+  }
+
+  const data: BarChartData[] = [];
+  for (const bucket of Object.values(buckets)) {
+    if (bucket.tokens <= 0 && bucket.messages <= 0) {
+      continue;
+    }
+    data.push({ label: bucket.label, value: bucket.tokens, color: bucket.color });
+  }
+
+  return data;
+}
+
+function startOfDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function formatDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatDayLabel(date: Date): string {
+  const weekday = date.toLocaleDateString(undefined, { weekday: "short" });
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  return `${weekday} ${month}/${day}`;
 }
 
 export default SessionPicker;

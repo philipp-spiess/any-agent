@@ -551,6 +551,7 @@ function createSessionSummary(
     model: primaryModel,
     costUsd: 0,
     modelUsage,
+    messageCount: transcript.length,
   }
 
   return session

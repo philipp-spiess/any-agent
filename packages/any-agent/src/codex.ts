@@ -35,6 +35,7 @@ export interface SessionSummary {
   model: string | null
   costUsd: number
   modelUsage: Map<string, TokenUsage>
+  messageCount: number
 }
 
 export interface SessionsWithTotals {
@@ -108,7 +109,14 @@ export async function getSessions(options: GetSessionsOptions = {}): Promise<Ses
             break outer
           }
 
-          const { head, meta, firstUserMessage, tokenUsage, modelUsage } = await readHead(
+          const {
+            head,
+            meta,
+            firstUserMessage,
+            tokenUsage,
+            modelUsage,
+            messageCount,
+          } = await readHead(
             file.path,
             headRecordLimit,
           )
@@ -161,6 +169,7 @@ export async function getSessions(options: GetSessionsOptions = {}): Promise<Ses
             model: primaryModel,
             costUsd: 0,
             modelUsage,
+            messageCount,
           })
 
           if (limit && sessions.length >= limit) {
@@ -507,6 +516,7 @@ async function readHead(filePath: string, limit: number): Promise<{
   firstUserMessage: string | null
   tokenUsage: TokenUsage
   modelUsage: Map<string, TokenUsage>
+  messageCount: number
 }> {
   const head: unknown[] = []
   let meta: SessionMetaPayload | null = null
@@ -515,6 +525,7 @@ async function readHead(filePath: string, limit: number): Promise<{
   const perModel = new Map<string, TokenUsage>()
   let previousTotals: RawUsage | null = null
   let currentModel: string | null = null
+  let messageCount = 0
 
   const stream = createReadStream(filePath, { encoding: 'utf8' })
   const rl = readline.createInterface({ input: stream, crlfDelay: Infinity })
@@ -546,6 +557,10 @@ async function readHead(filePath: string, limit: number): Promise<{
         if (typeof message === 'string' && message.trim().length > 0) {
           firstUserMessage = message
         }
+      }
+
+      if (isMessageEvent(parsed)) {
+        messageCount += 1
       }
 
       if (isTurnContext(parsed)) {
@@ -607,6 +622,7 @@ async function readHead(filePath: string, limit: number): Promise<{
     firstUserMessage,
     tokenUsage: totals,
     modelUsage: perModel,
+    messageCount,
   }
 }
 
@@ -620,6 +636,13 @@ type UserEventRecord = {
   payload: {
     type: 'user_message'
     message: unknown
+  }
+}
+
+type MessageEventRecord = {
+  type: 'event_msg'
+  payload: {
+    type?: unknown
   }
 }
 
@@ -671,6 +694,28 @@ function isUserEvent(value: unknown): value is UserEventRecord {
   }
 
   return (payload as { type?: unknown }).type === 'user_message'
+}
+
+function isMessageEvent(value: unknown): value is MessageEventRecord {
+  if (typeof value !== 'object' || value === null) {
+    return false
+  }
+
+  if ((value as { type?: unknown }).type !== 'event_msg') {
+    return false
+  }
+
+  const payload = (value as { payload?: unknown }).payload
+  if (!payload || typeof payload !== 'object') {
+    return false
+  }
+
+  const payloadType = (payload as { type?: unknown }).type
+  if (typeof payloadType !== 'string') {
+    return false
+  }
+
+  return payloadType.toLowerCase().includes('message')
 }
 
 type TokenCountRecord = {

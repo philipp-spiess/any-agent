@@ -115,6 +115,7 @@ test('getSessions reads rollout files and returns session summaries', async () =
   expect(session.forkSignature).toBe('Hello from user')
   expect(session.model).toBe('gpt-5-codex')
   expect(session.costUsd).toBeCloseTo(0.0027)
+  expect(session.messageCount).toBe(1)
   expect(totalBlendedTokens).toBe(1900)
   expect(totalCostUsd).toBeCloseTo(0.0027)
 })

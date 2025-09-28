@@ -11,6 +11,7 @@
         "resume": "./bin/resume.js",
       },
       "dependencies": {
+        "@pppp606/ink-chart": "^0.1.1",
         "ink": "^6.3.1",
         "ink-enhanced-select-input": "^0.2.0",
         "react": "^19.1.1",
@@ -108,6 +109,8 @@
     "@napi-rs/wasm-runtime": ["@napi-rs/wasm-runtime@0.2.12", "", { "dependencies": { "@emnapi/core": "^1.4.3", "@emnapi/runtime": "^1.4.3", "@tybys/wasm-util": "^0.10.0" } }, "sha512-ZVWUcfwY4E/yPitQJl481FjFo3K22D6qF0DuFH6Y/nbnE11GY5uguDxZMGXPQ8WQ0128MXQD7TnfHyK4oWoIJQ=="],
 
     "@oxc-project/types": ["@oxc-project/types@0.70.0", "", {}, "sha512-ngyLUpUjO3dpqygSRQDx7nMx8+BmXbWOU4oIwTJFV2MVIDG7knIZwgdwXlQWLg3C3oxg1lS7ppMtPKqKFb7wzw=="],
+
+    "@pppp606/ink-chart": ["@pppp606/ink-chart@0.1.1", "", { "peerDependencies": { "ink": ">=4", "react": ">=18" }, "bin": { "ink-chart-demo": "bin/demo.tsx" } }, "sha512-iuJnx013aLBmhCER9GEC8/J+DtMnJWP68xbkGthHoN3vI7Lou6VEns64UvfxPZA+P33iADk0CDWnz4tRlX5Fww=="],
 
     "@quansync/fs": ["@quansync/fs@0.1.5", "", { "dependencies": { "quansync": "^0.2.11" } }, "sha512-lNS9hL2aS2NZgNW7BBj+6EBl4rOf8l+tQ0eRY6JWCI8jI2kc53gSoqbjojU0OnAWhzoXiOjFyGsHcDGePB3lhA=="],
 
