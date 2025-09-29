@@ -1,3 +1,4 @@
+import { writeFile } from 'node:fs/promises'
 import type { ReadStream as TtyReadStream } from 'node:tty'
 import { pathToFileURL } from 'node:url'
 import process from 'node:process'
@@ -17,6 +18,10 @@ const TTY_DEBUG = process.env.ANY_AGENT_DEBUG_TTY === '1'
 export { getCodexSessions as getSessions, getClaudeSessions }
 
 export type SessionSourceFilter = 'all' | 'codex' | 'claudecode'
+
+const RESUME_SIGNAL_PATH_ENV = 'ANY_AGENT_RESUME_SIGNAL_PATH'
+const RESUME_SIGNAL_CODE_ENV = 'ANY_AGENT_RESUME_SIGNAL_CODE'
+const DEFAULT_RESUME_SIGNAL_CODE = 95
 
 const EMPTY_RESULT = (): SessionsWithTotals => ({
   sessions: [],
@@ -116,6 +121,47 @@ const sanitizeWorkingDirectory = (value: unknown): string | undefined => {
   }
   const trimmed = value.trim()
   return trimmed.length > 0 ? trimmed : undefined
+}
+
+type ResumeSignalPayload = {
+  resumeTarget: string
+  source: SessionSummary['source']
+  cwd?: string
+  yoloMode: boolean
+}
+
+const parseResumeSignalExitCode = (): number => {
+  const raw = process.env[RESUME_SIGNAL_CODE_ENV]
+  if (!raw) {
+    return DEFAULT_RESUME_SIGNAL_CODE
+  }
+  const parsed = Number.parseInt(raw, 10)
+  if (Number.isInteger(parsed) && parsed >= 0 && parsed <= 255) {
+    return parsed
+  }
+  return DEFAULT_RESUME_SIGNAL_CODE
+}
+
+const signalResumeRequest = async (
+  payload: ResumeSignalPayload,
+): Promise<number | null> => {
+  const signalPath = process.env[RESUME_SIGNAL_PATH_ENV]
+  if (!signalPath) {
+    return null
+  }
+
+  try {
+    const serialized = `${JSON.stringify(payload)}\n`
+    await writeFile(signalPath, serialized, { encoding: 'utf8' })
+    return parseResumeSignalExitCode()
+  } catch (error) {
+    try {
+      console.error('Failed to write resume signal file:', error)
+    } catch {
+      // ignore logging failures
+    }
+    return null
+  }
 }
 
 const clearScreen = () => {
@@ -271,10 +317,24 @@ export async function main() {
     clearScreen()
     debugTtyState('before-spawn')
     process.stdout.write(`Resuming session ${sessionToResume.id}\n`)
-    const exitCode = await resumeSession(sessionToResume.resumeTarget, {
+
+    const resumePayload: ResumeSignalPayload = {
+      resumeTarget: sessionToResume.resumeTarget,
       source: sessionToResume.source,
       cwd: resolveSessionWorkingDirectory(sessionToResume),
       yoloMode,
+    }
+    const resumeSignalExitCode = await signalResumeRequest(resumePayload)
+    if (resumeSignalExitCode !== null) {
+      debugTtyState('resume-signal-dispatched')
+      process.exitCode = resumeSignalExitCode
+      return
+    }
+
+    const exitCode = await resumeSession(resumePayload.resumeTarget, {
+      source: resumePayload.source,
+      cwd: resumePayload.cwd,
+      yoloMode: resumePayload.yoloMode,
     })
     process.exitCode = exitCode
   } catch (error) {

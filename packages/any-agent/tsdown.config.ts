@@ -6,4 +6,8 @@ export default defineConfig([
     platform: 'node',
     dts: true,
   },
+  {
+    entry: ['./src/resumeRunner.ts'],
+    platform: 'node',
+  },
 ])

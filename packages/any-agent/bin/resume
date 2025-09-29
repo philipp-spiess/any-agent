@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+NODE_BIN="${NODE_BIN:-node}"
+DIST_INDEX="${ROOT_DIR}/dist/index.js"
+RESUME_RUNNER="${ROOT_DIR}/dist/resumeRunner.js"
+RESUME_CODE="${ANY_AGENT_RESUME_SIGNAL_CODE:-95}"
+SIGNAL_FILE="$(mktemp "${TMPDIR:-/tmp}/any-agent-resume.XXXXXX")"
+
+cleanup() {
+  rm -f "${SIGNAL_FILE}"
+}
+trap cleanup EXIT
+
+export ANY_AGENT_RESUME_SIGNAL_PATH="${SIGNAL_FILE}"
+export ANY_AGENT_RESUME_SIGNAL_CODE="${RESUME_CODE}"
+
+"${NODE_BIN}" "${DIST_INDEX}" "$@"
+status=$?
+
+if [[ ${status} -eq 0 ]]; then
+  exit 0
+fi
+
+if [[ ${status} -ne ${RESUME_CODE} ]]; then
+  exit ${status}
+fi
+
+if [[ ! -s "${SIGNAL_FILE}" ]]; then
+  echo "any-agent: resume requested but signal file is missing" >&2
+  exit 1
+fi
+
+"${NODE_BIN}" "${RESUME_RUNNER}" "${SIGNAL_FILE}"
+exit $?
