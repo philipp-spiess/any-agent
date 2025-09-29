@@ -1,17 +1,17 @@
-# any-agent workspace
+# any-agent
 
-This repository is organized as a Bun workspaces monorepo. The existing CLI now lives in [`packages/any-agent`](packages/any-agent), preserving its original package metadata and build tooling.
+Manage all your coding agents in one place. A unified interface for resuming sessions across multiple AI coding assistants (OpenAI Codex, Claude Code).
 
-To install dependencies for all packages, run:
-
-```sh
-bun install
-```
-
-From there you can run package scripts with Bun's workspace filter flag. For example, to run tests for the CLI package:
+## Usage
 
 ```sh
-bun run --filter any-agent test
+npx -y any-agent@latest
 ```
 
-See the package README for detailed usage instructions.
+## Installation
+
+If you want to install it and use the `resume` shortcut, you can do it via:
+
+```sh
+npm install -g any-agent
+```
