@@ -11,6 +11,8 @@ import {
 } from './codex'
 import { LiteLLMPricingFetcher, type LiteLLMModelPricing } from './pricing'
 
+export const CLAUDE_CODE_BRAND_COLOR = '#f97316'
+
 type ClaudeSessionsOptions = {
   claudeDirs?: string[]
   limit?: number

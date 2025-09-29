@@ -4,6 +4,8 @@ import { BarChart, Sparkline, type BarChartData } from "@pppp606/ink-chart";
 import os from "node:os";
 import path from "node:path";
 import type { SessionSummary } from "../codex";
+import { CODEX_BRAND_COLOR } from "../codex";
+import { CLAUDE_CODE_BRAND_COLOR } from "../claudecode";
 import { formatUsd } from "../pricing";
 
 const HEADER_FOOTPRINT = 2;
@@ -127,15 +129,8 @@ export const SessionPicker: React.FC<SessionPickerProps> = ({
   const homeDir = useMemo(() => os.homedir(), []);
   const hasSessions = sessions.length > 0;
   const headerSummary = useMemo(() => {
-    const parts = ["Agent History"];
-    if (totalTokens > 0) {
-      parts.push(`${formatSiSuffix(totalTokens)} total tokens`);
-    }
-    if (totalCost > 0) {
-      parts.push(`${formatUsd(totalCost)} total costs`);
-    }
-    return parts.join(" · ");
-  }, [totalCost, totalTokens]);
+    return "🤖 Any Agent History";
+  }, []);
   const availableHeight = Math.max(
     rows - HEADER_FOOTPRINT - STATUS_LINE_FOOTPRINT - chartMetrics.footprint,
     1
@@ -218,7 +213,7 @@ export const SessionPicker: React.FC<SessionPickerProps> = ({
           {hasSparkline ? (
             <>
               <Text color={HEADER_COLOR}>
-                {`Last ${chartMetrics.sparkline.dayCount} days · ${formatSiSuffix(chartMetrics.sparkline.totalTokens)} tok${chartMetrics.sparkline.peakDay ? ` · peak ${chartMetrics.sparkline.peakDay}` : ""}`}
+                {`${formatSiSuffix(totalTokens)} total tokens${totalCost > 0 ? ` · ${formatUsd(totalCost).replace('$', '')} total costs` : ""}${chartMetrics.sparkline.peakDay ? ` · peak ${chartMetrics.sparkline.peakDay}` : ""}`}
               </Text>
               <Box width={Math.max(columns, 1)} justifyContent="flex-end">
                 <Sparkline
@@ -226,6 +221,11 @@ export const SessionPicker: React.FC<SessionPickerProps> = ({
                   width={Math.max(chartMetrics.sparkline.points.length, 1)}
                   colorScheme="blue"
                 />
+              </Box>
+              <Box width={Math.max(columns, 1)} justifyContent="flex-end">
+                <Text color={HEADER_COLOR}>
+                  {`total usage in the last ${chartMetrics.sparkline.dayCount} days`}
+                </Text>
               </Box>
             </>
           ) : null}
@@ -260,7 +260,7 @@ export const SessionPicker: React.FC<SessionPickerProps> = ({
           <Text color={MESSAGE_COLOR}>No agent sessions found.</Text>
         </Box>
       )}
-      <StatusLine />
+      <StatusLine selectedSession={sessions[highlightedIndex]} />
     </Box>
   );
 };
@@ -306,29 +306,53 @@ const SessionRow: React.FC<SessionRowProps> = ({
     : "";
   const baseMessage = session.preview ?? "(no user message)";
   const marker = session.branchMarker?.trim().length ? session.branchMarker : " ";
-  const decoratedMessage = `${marker} ${baseMessage}`;
-  const message = truncate(decoratedMessage, layout.messageWidth);
+  const messageWithoutMarker = truncate(baseMessage, Math.max(0, layout.messageWidth - 2));
   const indicator = isSelected ? "➤" : " ";
 
-  const leftColumns = [timestamp];
-  if (layout.showModel) {
-    leftColumns.push(modelColumn);
-  }
-  if (layout.showTokens) {
-    leftColumns.push(tokensColumn);
-  }
-  if (layout.showRepo) {
-    leftColumns.push(repoColumn);
-  }
-
-  const leftPart = ` ${leftColumns.join(" │ ")}`;
-  const separator = layout.messageWidth > 0 ? " │ " : "";
+  const leftColor = isSelected ? MESSAGE_COLOR : HEADER_COLOR;
+  const brandColor = session.source === "claude-code" ? CLAUDE_CODE_BRAND_COLOR : CODEX_BRAND_COLOR;
 
   return (
     <Box>
-      <Text color={isSelected ? KEY_COLOR : HEADER_COLOR}>{indicator}</Text>
-      <Text color={HEADER_COLOR}>{`${leftPart}${separator}`}</Text>
-      <Text color={isSelected ? KEY_COLOR : MESSAGE_COLOR}>{message}</Text>
+      <Text color={isSelected ? brandColor : HEADER_COLOR}>{indicator}</Text>
+      <Text color={leftColor}>{` ${timestamp}`}</Text>
+      {layout.showModel && (
+        <>
+          <Text color={HEADER_COLOR}> │ </Text>
+          {isSelected ? (
+            <>
+              <Text color={brandColor}>
+                {session.source === "claude-code" ? "Claude Code" : "Codex"}
+              </Text>
+              <Text color={leftColor}>
+                {modelColumn.replace("Claude Code", "").replace("Codex", "")}
+              </Text>
+            </>
+          ) : (
+            <Text color={leftColor}>{modelColumn}</Text>
+          )}
+        </>
+      )}
+      {layout.showTokens && (
+        <>
+          <Text color={HEADER_COLOR}> │ </Text>
+          <Text color={leftColor}>{tokensColumn}</Text>
+        </>
+      )}
+      {layout.showRepo && (
+        <>
+          <Text color={HEADER_COLOR}> │ </Text>
+          <Text color={leftColor}>{repoColumn}</Text>
+        </>
+      )}
+      {layout.messageWidth > 0 && (
+        <>
+          <Text color={HEADER_COLOR}> │ </Text>
+          <Text color={HEADER_COLOR}>{marker}</Text>
+          <Text color={HEADER_COLOR}> </Text>
+          <Text color={isSelected ? brandColor : MESSAGE_COLOR}>{messageWithoutMarker}</Text>
+        </>
+      )}
     </Box>
   );
 };
@@ -463,12 +487,22 @@ const columnIsVisible = (layout: TableLayout, key: ColumnKey): boolean => {
   return true;
 };
 
-const StatusLine: React.FC = () => (
-  <Box marginTop={1}>
-    <Text color={KEY_COLOR}>⏎ </Text>
-    <Text>resume</Text>
-  </Box>
-);
+interface StatusLineProps {
+  selectedSession?: SessionSummary;
+}
+
+const StatusLine: React.FC<StatusLineProps> = ({ selectedSession }) => {
+  const brandColor = selectedSession?.source === "claude-code"
+    ? CLAUDE_CODE_BRAND_COLOR
+    : CODEX_BRAND_COLOR;
+
+  return (
+    <Box marginTop={1}>
+      <Text color={selectedSession ? brandColor : KEY_COLOR}>⏎ </Text>
+      <Text>resume</Text>
+    </Box>
+  );
+};
 
 function formatPath(cwd: string, homeDir: string): string {
   if (!cwd) {
@@ -680,13 +714,13 @@ function computeProviderBars(sessions: SessionSummary[]): BarChartData[] {
       label: "Codex",
       tokens: 0,
       messages: 0,
-      color: KEY_COLOR,
+      color: CODEX_BRAND_COLOR,
     },
     "claude-code": {
       label: "Claude Code",
       tokens: 0,
       messages: 0,
-      color: "#f97316",
+      color: CLAUDE_CODE_BRAND_COLOR,
     },
   };
 

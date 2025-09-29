@@ -7,6 +7,8 @@ import readline from 'node:readline'
 import { LiteLLMPricingFetcher } from './pricing'
 import type { LiteLLMModelPricing } from './pricing'
 
+export const CODEX_BRAND_COLOR = 'cyan'
+
 type SessionMetaPayload = {
   id?: string
   timestamp?: string
