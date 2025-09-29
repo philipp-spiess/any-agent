@@ -87,11 +87,13 @@ test('getClaudeSessions reads transcript files and returns session summaries', a
   expect(sessions).toHaveLength(1)
   const [session] = sessions
   expect(session.id).toBe(leafUuid)
+  expect(session.resumeTarget).toBe('session-1')
   expect(session.source).toBe('claude-code')
   expect(session.path).toBe(transcriptPath)
   expect(session.preview).toBe('Build a feature that parses Claude transcripts')
   expect(session.meta?.summary).toBe('Ship feature summary')
   expect(session.meta?.cwd).toBe('/workspace/test-app')
+  expect(session.meta?.resumeSessionId).toBe('session-1')
   expect(session.meta?.projectPath).toBe(path.join(path.sep, 'Users', 'test', 'project'))
   expect(session.tokenUsage).toEqual({
     inputTokens: 460,

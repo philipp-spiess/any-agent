@@ -10,12 +10,14 @@ export interface ResumeSessionOptions {
   config?: string
   extraArgs?: string[]
   env?: NodeJS.ProcessEnv
+  cwd?: string
   spawnImpl?: (
     command: string,
     args: ReadonlyArray<string>,
     options: SpawnOptions,
   ) => ChildProcess
   forwardSignals?: NodeJS.Signals[]
+  wrapClaudeWithScript?: boolean
 }
 
 const DEFAULT_MODEL = 'gpt-5-codex'
@@ -39,8 +41,10 @@ export async function resumeSession(
     config = DEFAULT_CONFIG,
     extraArgs = [],
     env = process.env,
+    cwd,
     spawnImpl = spawn,
     forwardSignals = DEFAULT_SIGNALS,
+    wrapClaudeWithScript = process.platform !== 'win32',
   } = options
 
   const { command, args } = buildResumeInvocation({
@@ -50,11 +54,13 @@ export async function resumeSession(
     model,
     config,
     extraArgs,
+    wrapClaudeWithScript,
   })
 
   const spawnOptions: SpawnOptions = {
     stdio: 'inherit',
     env,
+    cwd,
   }
 
   const child = spawnImpl(command, args, spawnOptions)
@@ -112,6 +118,7 @@ type ResumeInvocationOptions = {
   model: string
   config: string
   extraArgs: string[]
+  wrapClaudeWithScript: boolean
 }
 
 function buildResumeInvocation({
@@ -121,10 +128,18 @@ function buildResumeInvocation({
   model,
   config,
   extraArgs,
+  wrapClaudeWithScript,
 }: ResumeInvocationOptions): ResumeInvocation {
   if (source === 'claude-code') {
+    const claudeBinary = binary ?? 'claude'
+    if (wrapClaudeWithScript) {
+      return {
+        command: 'script',
+        args: ['-q', '/dev/null', claudeBinary, '--resume', sessionId, ...extraArgs],
+      }
+    }
     return {
-      command: binary ?? 'claude',
+      command: claudeBinary,
       args: ['--resume', sessionId, ...extraArgs],
     }
   }

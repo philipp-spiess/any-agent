@@ -65,6 +65,24 @@ test('resumeSession spawns codex with default arguments and returns exit code', 
   })
   expect(calls[0].options.stdio).toBe('inherit')
   expect(calls[0].options.env).toBe(process.env)
+  expect(calls[0].options.cwd).toBeUndefined()
+})
+
+test('resumeSession passes cwd to spawn options when provided', async () => {
+  const calls: SpawnCall[] = []
+  const child = createFakeChild()
+  const spawnImpl = vi.fn((command: string, args: ReadonlyArray<string>, options: SpawnOptionsWithoutStdio) => {
+    calls.push({ command, args, options })
+    return child
+  })
+
+  const cwd = '/tmp/example-project'
+  const promise = resumeSession('session-with-cwd', { spawnImpl, cwd })
+  child.emit('exit', 0, null)
+  await promise
+
+  expect(spawnImpl).toHaveBeenCalledOnce()
+  expect(calls[0].options.cwd).toBe(cwd)
 })
 
 test('resumeSession forwards signals to the spawned process', async () => {
@@ -115,6 +133,7 @@ test('resumeSession spawns claude with resume arguments when source is claude-co
   const promise = resumeSession('session-claude', {
     source: 'claude-code',
     spawnImpl,
+    wrapClaudeWithScript: false,
   })
   child.emit('exit', 0, null)
   const exitCode = await promise
@@ -124,5 +143,28 @@ test('resumeSession spawns claude with resume arguments when source is claude-co
   expect(calls[0]).toMatchObject({
     command: 'claude',
     args: ['--resume', 'session-claude'],
+  })
+})
+
+test('resumeSession wraps claude command with script when enabled', async () => {
+  const calls: SpawnCall[] = []
+  const child = createFakeChild()
+  const spawnImpl = vi.fn((command: string, args: ReadonlyArray<string>, options: SpawnOptionsWithoutStdio) => {
+    calls.push({ command, args, options })
+    return child
+  })
+
+  const promise = resumeSession('session-claude', {
+    source: 'claude-code',
+    spawnImpl,
+    wrapClaudeWithScript: true,
+  })
+  child.emit('exit', 0, null)
+  await promise
+
+  expect(spawnImpl).toHaveBeenCalledOnce()
+  expect(calls[0]).toMatchObject({
+    command: 'script',
+    args: ['-q', '/dev/null', 'claude', '--resume', 'session-claude'],
   })
 })

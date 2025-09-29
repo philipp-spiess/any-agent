@@ -22,6 +22,7 @@ const makeSession = (
   id,
   source,
   path: `/tmp/${id}`,
+  resumeTarget: id,
   timestamp,
   timestampUtc: timestamp.toISOString(),
   relativeTime: 'just now',

@@ -522,6 +522,7 @@ function createSessionSummary(
   const preview = firstUserMessage ? summarizeMessage(firstUserMessage) : null
   const cwd = deriveWorkingDirectory(transcript, file)
   const forkSignature = firstUserMessage ? summarizeMessage(firstUserMessage, 120) : null
+  const resumeTarget = findSessionId(transcript) ?? leaf.uuid
 
   const primaryModel = selectPrimaryModel(modelUsage)
 
@@ -529,6 +530,7 @@ function createSessionSummary(
     id: leaf.uuid,
     source: 'claude-code',
     path: file?.path ?? '',
+    resumeTarget,
     timestamp,
     timestampUtc: timestamp.toISOString(),
     relativeTime: formatRelativeTime(timestamp),
@@ -541,6 +543,7 @@ function createSessionSummary(
       transcriptFile: file?.path,
       messageCount: transcript.length,
       cwd,
+      resumeSessionId: resumeTarget,
     },
     head: transcript.slice(0, MAX_HEAD_RECORDS).map(entry => entry.raw),
     tokenUsage,
@@ -555,6 +558,16 @@ function createSessionSummary(
   }
 
   return session
+}
+
+function findSessionId(transcript: ClaudeMessageRecord[]): string | null {
+  for (const message of transcript) {
+    const rawId = typeof message.sessionId === 'string' ? message.sessionId.trim() : ''
+    if (rawId.length > 0) {
+      return rawId
+    }
+  }
+  return null
 }
 
 function collectAssistantUsageMessages(

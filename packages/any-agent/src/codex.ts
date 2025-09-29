@@ -21,6 +21,7 @@ export interface SessionSummary {
   id: string
   source: 'codex' | 'claude-code'
   path: string
+  resumeTarget: string
   timestamp: Date
   timestampUtc: string
   relativeTime: string
@@ -155,6 +156,7 @@ export async function getSessions(options: GetSessionsOptions = {}): Promise<Ses
             id,
             source: 'codex',
             path: file.path,
+            resumeTarget: id,
             timestamp,
             timestampUtc: timestamp.toISOString(),
             relativeTime: formatRelativeTime(timestamp),

@@ -97,6 +97,7 @@ test('getSessions reads rollout files and returns session summaries', async () =
 
   const [session] = sessions
   expect(session.id).toBe(id)
+  expect(session.resumeTarget).toBe(id)
   expect(session.path).toBe(filePath)
   expect(session.preview).toBe('Hello from user')
   expect(session.meta?.originator).toBe('test_originator')
