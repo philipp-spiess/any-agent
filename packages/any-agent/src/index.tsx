@@ -4,6 +4,7 @@ import process from 'node:process'
 import { render } from 'ink'
 import {
   getSessions as getCodexSessions,
+  orderSessionsByBranch,
   type SessionSummary,
   type SessionsWithTotals,
 } from './codex'
@@ -49,9 +50,8 @@ export async function getAllSessions(
     safeLoad(() => getClaudeSessions()),
   ])
 
-  const sessions = [...codex.sessions, ...claude.sessions].sort(
-    (a, b) => b.timestamp.getTime() - a.timestamp.getTime(),
-  )
+  const mergedSessions = [...codex.sessions, ...claude.sessions]
+  const sessions = orderSessionsByBranch(mergedSessions)
   const totalBlendedTokens = codex.totalBlendedTokens + claude.totalBlendedTokens
   const totalCostUsd = codex.totalCostUsd + claude.totalCostUsd
 
