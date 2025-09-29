@@ -281,10 +281,11 @@ const debugTtyState = (stage: string) => {
 
 export async function main() {
   try {
-    const { filter: sourceFilter, yoloMode } = parseCliOptions(process.argv.slice(2))
+    const { filter: sourceFilter, yoloMode: initialYoloMode } = parseCliOptions(process.argv.slice(2))
     const { sessions, totalBlendedTokens, totalCostUsd } =
       await getAllSessions(sourceFilter)
     let selectedSession: SessionSummary | undefined
+    let selectedYoloMode = initialYoloMode
 
     const initialRawMode = captureRawMode()
     const initialEncoding = captureEncoding()
@@ -295,8 +296,10 @@ export async function main() {
         sessions={sessions}
         totalTokens={totalBlendedTokens}
         totalCost={totalCostUsd}
-        onResume={session => {
+        initialYoloMode={initialYoloMode}
+        onResume={(session, yoloMode) => {
           selectedSession = session
+          selectedYoloMode = yoloMode
         }}
       />
     )
@@ -322,7 +325,7 @@ export async function main() {
       resumeTarget: sessionToResume.resumeTarget,
       source: sessionToResume.source,
       cwd: resolveSessionWorkingDirectory(sessionToResume),
-      yoloMode,
+      yoloMode: selectedYoloMode,
     }
     const resumeSignalExitCode = await signalResumeRequest(resumePayload)
     if (resumeSignalExitCode !== null) {

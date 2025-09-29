@@ -102,18 +102,21 @@ interface SessionPickerProps {
   sessions: SessionSummary[];
   totalTokens: number;
   totalCost: number;
-  onResume?: (session: SessionSummary) => void;
+  initialYoloMode?: boolean;
+  onResume?: (session: SessionSummary, yoloMode: boolean) => void;
 }
 
 export const SessionPicker: React.FC<SessionPickerProps> = ({
   sessions,
   totalTokens,
   totalCost,
+  initialYoloMode = false,
   onResume,
 }) => {
   const { exit } = useApp();
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const [offset, setOffset] = useState(0);
+  const [yoloMode, setYoloMode] = useState(initialYoloMode);
   const [stdoutColumns, stdoutRows] = useTerminalDimensions();
   const columns = stdoutColumns ?? 80;
   const rows = stdoutRows ?? 24;
@@ -183,10 +186,12 @@ export const SessionPicker: React.FC<SessionPickerProps> = ({
         });
         return next;
       });
+    } else if (key.tab) {
+      setYoloMode((prev) => !prev);
     } else if (key.return) {
       const session = sessions[highlightedIndex];
       if (session) {
-        onResume?.(session);
+        onResume?.(session, yoloMode);
       }
       exit();
     }
@@ -260,7 +265,7 @@ export const SessionPicker: React.FC<SessionPickerProps> = ({
           <Text color={MESSAGE_COLOR}>No agent sessions found.</Text>
         </Box>
       )}
-      <StatusLine selectedSession={sessions[highlightedIndex]} />
+      <StatusLine selectedSession={sessions[highlightedIndex]} yoloMode={yoloMode} />
     </Box>
   );
 };
@@ -489,9 +494,10 @@ const columnIsVisible = (layout: TableLayout, key: ColumnKey): boolean => {
 
 interface StatusLineProps {
   selectedSession?: SessionSummary;
+  yoloMode: boolean;
 }
 
-const StatusLine: React.FC<StatusLineProps> = ({ selectedSession }) => {
+const StatusLine: React.FC<StatusLineProps> = ({ selectedSession, yoloMode }) => {
   const brandColor = selectedSession?.source === "claude-code"
     ? CLAUDE_CODE_BRAND_COLOR
     : CODEX_BRAND_COLOR;
@@ -499,7 +505,10 @@ const StatusLine: React.FC<StatusLineProps> = ({ selectedSession }) => {
   return (
     <Box marginTop={1}>
       <Text color={selectedSession ? brandColor : KEY_COLOR}>⏎ </Text>
-      <Text>resume</Text>
+      <Text>{yoloMode ? 'resume in yolo mode' : 'resume'}</Text>
+      <Text color={HEADER_COLOR}> │ </Text>
+      <Text color={KEY_COLOR}>⇥ </Text>
+      <Text>toggle yolo mode</Text>
     </Box>
   );
 };
