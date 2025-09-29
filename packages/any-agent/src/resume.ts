@@ -1,7 +1,10 @@
 import { spawn } from 'node:child_process'
 import type { ChildProcess, SpawnOptions } from 'node:child_process'
 
+export type ResumeSessionSource = 'codex' | 'claude-code'
+
 export interface ResumeSessionOptions {
+  source?: ResumeSessionSource
   binary?: string
   model?: string
   config?: string
@@ -18,6 +21,7 @@ export interface ResumeSessionOptions {
 const DEFAULT_MODEL = 'gpt-5-codex'
 const DEFAULT_CONFIG = 'model_reasoning_effort="high"'
 const DEFAULT_SIGNALS: NodeJS.Signals[] = ['SIGINT', 'SIGTERM', 'SIGHUP']
+const DEFAULT_SOURCE: ResumeSessionSource = 'codex'
 
 export async function resumeSession(
   sessionId: string,
@@ -25,11 +29,12 @@ export async function resumeSession(
 ): Promise<number> {
   const trimmedId = sessionId?.trim()
   if (!trimmedId) {
-    throw new Error('Session id is required to resume a Codex session')
+    throw new Error('Session id is required to resume an agent session')
   }
 
   const {
-    binary = 'codex',
+    source = DEFAULT_SOURCE,
+    binary,
     model = DEFAULT_MODEL,
     config = DEFAULT_CONFIG,
     extraArgs = [],
@@ -38,48 +43,43 @@ export async function resumeSession(
     forwardSignals = DEFAULT_SIGNALS,
   } = options
 
-  const args = [
-    '-m',
+  const { command, args } = buildResumeInvocation({
+    sessionId: trimmedId,
+    source,
+    binary,
     model,
-    '-c',
     config,
-    '--yolo',
-    '--search',
-    'resume',
-    trimmedId,
-    ...extraArgs,
-  ]
+    extraArgs,
+  })
 
   const spawnOptions: SpawnOptions = {
     stdio: 'inherit',
     env,
   }
 
-  const child = spawnImpl(binary, args, spawnOptions)
+  const child = spawnImpl(command, args, spawnOptions)
 
-  const listenerMap = new Map<NodeJS.Signals, () => void>()
+  return await new Promise<number>((resolve, reject) => {
+    const listenerMap = new Map<NodeJS.Signals, () => void>()
 
-  for (const signal of forwardSignals) {
-    const handler = () => {
-      if (!child.killed) {
+    const cleanup = () => {
+      for (const [signal, handler] of listenerMap) {
+        process.off(signal, handler)
+      }
+    }
+
+    for (const signal of forwardSignals) {
+      const handler = () => {
         try {
           child.kill(signal)
         } catch {
           // ignore failures when forwarding signals
         }
       }
+      listenerMap.set(signal, handler)
+      process.on(signal, handler)
     }
-    listenerMap.set(signal, handler)
-    process.on(signal, handler)
-  }
 
-  const cleanup = () => {
-    for (const [signal, handler] of listenerMap) {
-      process.off(signal, handler)
-    }
-  }
-
-  return await new Promise<number>((resolve, reject) => {
     child.once('error', error => {
       cleanup()
       reject(error)
@@ -91,9 +91,58 @@ export async function resumeSession(
         resolve(exitCodeFromSignal(signal))
         return
       }
-      resolve(code ?? 0)
+      if (code === null) {
+        resolve(0)
+        return
+      }
+      resolve(code)
     })
   })
+}
+
+type ResumeInvocation = {
+  command: string
+  args: string[]
+}
+
+type ResumeInvocationOptions = {
+  sessionId: string
+  source: ResumeSessionSource
+  binary?: string
+  model: string
+  config: string
+  extraArgs: string[]
+}
+
+function buildResumeInvocation({
+  sessionId,
+  source,
+  binary,
+  model,
+  config,
+  extraArgs,
+}: ResumeInvocationOptions): ResumeInvocation {
+  if (source === 'claude-code') {
+    return {
+      command: binary ?? 'claude',
+      args: ['--resume', sessionId, ...extraArgs],
+    }
+  }
+
+  return {
+    command: binary ?? 'codex',
+    args: [
+      '-m',
+      model,
+      '-c',
+      config,
+      '--yolo',
+      '--search',
+      'resume',
+      sessionId,
+      ...extraArgs,
+    ],
+  }
 }
 
 const SIGNAL_EXIT_CODES: Partial<Record<NodeJS.Signals, number>> = {

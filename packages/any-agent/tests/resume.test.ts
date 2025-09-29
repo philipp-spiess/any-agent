@@ -79,7 +79,9 @@ test('resumeSession forwards signals to the spawned process', async () => {
   const handler = sigintListeners[sigintListeners.length - 1] as () => void
 
   handler()
-  expect(child.kill).toHaveBeenCalledWith('SIGINT')
+  handler()
+  expect(child.kill).toHaveBeenNthCalledWith(1, 'SIGINT')
+  expect(child.kill).toHaveBeenNthCalledWith(2, 'SIGINT')
 
   child.emit('exit', 0, null)
   await promise
@@ -99,5 +101,28 @@ test('resumeSession returns mapped exit code when process ends via signal', asyn
 })
 
 test('resumeSession rejects when session id is missing', async () => {
-  await expect(resumeSession('')).rejects.toThrow('Session id is required to resume a Codex session')
+  await expect(resumeSession('')).rejects.toThrow('Session id is required to resume an agent session')
+})
+
+test('resumeSession spawns claude with resume arguments when source is claude-code', async () => {
+  const calls: SpawnCall[] = []
+  const child = createFakeChild()
+  const spawnImpl = vi.fn((command: string, args: ReadonlyArray<string>, options: SpawnOptionsWithoutStdio) => {
+    calls.push({ command, args, options })
+    return child
+  })
+
+  const promise = resumeSession('session-claude', {
+    source: 'claude-code',
+    spawnImpl,
+  })
+  child.emit('exit', 0, null)
+  const exitCode = await promise
+
+  expect(exitCode).toBe(0)
+  expect(spawnImpl).toHaveBeenCalledOnce()
+  expect(calls[0]).toMatchObject({
+    command: 'claude',
+    args: ['--resume', 'session-claude'],
+  })
 })

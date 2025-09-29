@@ -2,6 +2,7 @@ import { pathToFileURL } from 'node:url'
 import { render } from 'ink'
 import {
   getSessions as getCodexSessions,
+  type SessionSummary,
   type SessionsWithTotals,
 } from './codex'
 import { getClaudeSessions } from './claudecode'
@@ -72,7 +73,7 @@ export async function main() {
     const sourceFilter = parseSourceFilter(process.argv.slice(2))
     const { sessions, totalBlendedTokens, totalCostUsd } =
       await getAllSessions(sourceFilter)
-    let selectedSessionId: string | null = null
+    let selectedSession: SessionSummary | null = null
 
     const { waitUntilExit } = render(
       <SessionPicker
@@ -80,16 +81,18 @@ export async function main() {
         totalTokens={totalBlendedTokens}
         totalCost={totalCostUsd}
         onResume={session => {
-          selectedSessionId = session.id
+          selectedSession = session
         }}
       />
     )
 
     await waitUntilExit()
 
-    if (selectedSessionId) {
-      process.stdout.write(`Resuming session ${selectedSessionId}\n`)
-      const exitCode = await resumeSession(selectedSessionId)
+    if (selectedSession) {
+      process.stdout.write(`Resuming session ${selectedSession.id}\n`)
+      const exitCode = await resumeSession(selectedSession.id, {
+        source: selectedSession.source,
+      })
       process.exitCode = exitCode
     }
   } catch (error) {
