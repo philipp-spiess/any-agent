@@ -18,15 +18,8 @@
     "dist",
     "bin"
   ],
-  "main": "./dist/index.js",
-  "module": "./dist/index.js",
-  "types": "./dist/index.d.ts",
   "bin": {
-    "resume": "./bin/resume"
-  },
-  "exports": {
-    ".": "./dist/index.js",
-    "./package.json": "./package.json"
+    "any-agent": "./bin/resume"
   },
   "publishConfig": {
     "access": "public"
