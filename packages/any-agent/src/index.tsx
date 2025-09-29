@@ -58,18 +58,32 @@ export async function getAllSessions(
   return { sessions, totalBlendedTokens, totalCostUsd }
 }
 
-const parseSourceFilter = (argv: string[]): SessionSourceFilter => {
-  const [candidate] = argv
-  if (!candidate) {
-    return 'all'
+type ParsedCliOptions = {
+  filter: SessionSourceFilter
+  yoloMode: boolean
+}
+
+const parseCliOptions = (argv: string[]): ParsedCliOptions => {
+  let filter: SessionSourceFilter = 'all'
+  let yoloMode = false
+
+  for (const arg of argv) {
+    if (arg === '--yolo') {
+      yoloMode = true
+      continue
+    }
+
+    if (!arg || filter !== 'all') {
+      continue
+    }
+
+    const normalized = arg.toLowerCase()
+    if (normalized === 'codex' || normalized === 'claudecode') {
+      filter = normalized
+    }
   }
 
-  const normalized = candidate.toLowerCase()
-  if (normalized === 'codex' || normalized === 'claudecode') {
-    return normalized
-  }
-
-  return 'all'
+  return { filter, yoloMode }
 }
 
 const resolveSessionWorkingDirectory = (
@@ -221,7 +235,7 @@ const debugTtyState = (stage: string) => {
 
 export async function main() {
   try {
-    const sourceFilter = parseSourceFilter(process.argv.slice(2))
+    const { filter: sourceFilter, yoloMode } = parseCliOptions(process.argv.slice(2))
     const { sessions, totalBlendedTokens, totalCostUsd } =
       await getAllSessions(sourceFilter)
     let selectedSession: SessionSummary | undefined
@@ -260,6 +274,7 @@ export async function main() {
     const exitCode = await resumeSession(sessionToResume.resumeTarget, {
       source: sessionToResume.source,
       cwd: resolveSessionWorkingDirectory(sessionToResume),
+      yoloMode,
     })
     process.exitCode = exitCode
   } catch (error) {

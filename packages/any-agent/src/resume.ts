@@ -9,6 +9,7 @@ export interface ResumeSessionOptions {
   model?: string
   config?: string
   extraArgs?: string[]
+  yoloMode?: boolean
   env?: NodeJS.ProcessEnv
   cwd?: string
   spawnImpl?: (
@@ -40,6 +41,7 @@ export async function resumeSession(
     model = DEFAULT_MODEL,
     config = DEFAULT_CONFIG,
     extraArgs = [],
+    yoloMode = false,
     env = process.env,
     cwd,
     spawnImpl = spawn,
@@ -54,6 +56,7 @@ export async function resumeSession(
     model,
     config,
     extraArgs,
+    yoloMode,
     wrapClaudeWithScript,
   })
 
@@ -118,6 +121,7 @@ type ResumeInvocationOptions = {
   model: string
   config: string
   extraArgs: string[]
+  yoloMode: boolean
   wrapClaudeWithScript: boolean
 }
 
@@ -128,35 +132,36 @@ function buildResumeInvocation({
   model,
   config,
   extraArgs,
+  yoloMode,
   wrapClaudeWithScript,
 }: ResumeInvocationOptions): ResumeInvocation {
   if (source === 'claude-code') {
     const claudeBinary = binary ?? 'claude'
+    const claudeArgs = ['--resume', sessionId]
+    if (yoloMode) {
+      claudeArgs.push('--dangerously-skip-permissions')
+    }
+    claudeArgs.push(...extraArgs)
     if (wrapClaudeWithScript) {
       return {
         command: 'script',
-        args: ['-q', '/dev/null', claudeBinary, '--resume', sessionId, ...extraArgs],
+        args: ['-q', '/dev/null', claudeBinary, ...claudeArgs],
       }
     }
     return {
       command: claudeBinary,
-      args: ['--resume', sessionId, ...extraArgs],
+      args: claudeArgs,
     }
   }
 
+  const codexArgs = ['-m', model, '-c', config, '--search']
+  if (yoloMode) {
+    codexArgs.push('--yolo')
+  }
+  codexArgs.push('resume', sessionId, ...extraArgs)
   return {
     command: binary ?? 'codex',
-    args: [
-      '-m',
-      model,
-      '-c',
-      config,
-      '--yolo',
-      '--search',
-      'resume',
-      sessionId,
-      ...extraArgs,
-    ],
+    args: codexArgs,
   }
 }
 

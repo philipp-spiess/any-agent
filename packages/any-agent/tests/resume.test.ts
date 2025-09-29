@@ -57,7 +57,6 @@ test('resumeSession spawns codex with default arguments and returns exit code', 
       'gpt-5-codex',
       '-c',
       'model_reasoning_effort="high"',
-      '--yolo',
       '--search',
       'resume',
       'session-123',
@@ -66,6 +65,34 @@ test('resumeSession spawns codex with default arguments and returns exit code', 
   expect(calls[0].options.stdio).toBe('inherit')
   expect(calls[0].options.env).toBe(process.env)
   expect(calls[0].options.cwd).toBeUndefined()
+})
+
+test('resumeSession appends yolo flag when enabled for codex sessions', async () => {
+  const calls: SpawnCall[] = []
+  const child = createFakeChild()
+  const spawnImpl = vi.fn((command: string, args: ReadonlyArray<string>, options: SpawnOptionsWithoutStdio) => {
+    calls.push({ command, args, options })
+    return child
+  })
+
+  const promise = resumeSession('session-123', { spawnImpl, yoloMode: true })
+  child.emit('exit', 0, null)
+  await promise
+
+  expect(spawnImpl).toHaveBeenCalledOnce()
+  expect(calls[0]).toMatchObject({
+    command: 'codex',
+    args: [
+      '-m',
+      'gpt-5-codex',
+      '-c',
+      'model_reasoning_effort="high"',
+      '--search',
+      '--yolo',
+      'resume',
+      'session-123',
+    ],
+  })
 })
 
 test('resumeSession passes cwd to spawn options when provided', async () => {
@@ -146,6 +173,30 @@ test('resumeSession spawns claude with resume arguments when source is claude-co
   })
 })
 
+test('resumeSession appends skip permissions flag when yolo mode is enabled for claude sessions', async () => {
+  const calls: SpawnCall[] = []
+  const child = createFakeChild()
+  const spawnImpl = vi.fn((command: string, args: ReadonlyArray<string>, options: SpawnOptionsWithoutStdio) => {
+    calls.push({ command, args, options })
+    return child
+  })
+
+  const promise = resumeSession('session-claude', {
+    source: 'claude-code',
+    spawnImpl,
+    wrapClaudeWithScript: false,
+    yoloMode: true,
+  })
+  child.emit('exit', 0, null)
+  await promise
+
+  expect(spawnImpl).toHaveBeenCalledOnce()
+  expect(calls[0]).toMatchObject({
+    command: 'claude',
+    args: ['--resume', 'session-claude', '--dangerously-skip-permissions'],
+  })
+})
+
 test('resumeSession wraps claude command with script when enabled', async () => {
   const calls: SpawnCall[] = []
   const child = createFakeChild()
@@ -166,5 +217,29 @@ test('resumeSession wraps claude command with script when enabled', async () => 
   expect(calls[0]).toMatchObject({
     command: 'script',
     args: ['-q', '/dev/null', 'claude', '--resume', 'session-claude'],
+  })
+})
+
+test('resumeSession includes skip permissions flag when wrapped claude uses yolo mode', async () => {
+  const calls: SpawnCall[] = []
+  const child = createFakeChild()
+  const spawnImpl = vi.fn((command: string, args: ReadonlyArray<string>, options: SpawnOptionsWithoutStdio) => {
+    calls.push({ command, args, options })
+    return child
+  })
+
+  const promise = resumeSession('session-claude', {
+    source: 'claude-code',
+    spawnImpl,
+    wrapClaudeWithScript: true,
+    yoloMode: true,
+  })
+  child.emit('exit', 0, null)
+  await promise
+
+  expect(spawnImpl).toHaveBeenCalledOnce()
+  expect(calls[0]).toMatchObject({
+    command: 'script',
+    args: ['-q', '/dev/null', 'claude', '--resume', 'session-claude', '--dangerously-skip-permissions'],
   })
 })
