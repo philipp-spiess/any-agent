@@ -607,7 +607,8 @@ function createSessionSummary(
     return null
   }
   const rootUserMessage = promptMessages[0]
-  const preview = rootUserMessage ? summarizeMessage(rootUserMessage) : null
+  const latestUserMessage = promptMessages[promptMessages.length - 1]
+  const preview = latestUserMessage ? summarizeMessage(latestUserMessage) : null
   const cwd = deriveWorkingDirectory(transcript, file)
   const forkSignature = rootUserMessage ? summarizeMessage(rootUserMessage, 120) : null
   const resumeTarget = findSessionId(transcript) ?? leaf.uuid

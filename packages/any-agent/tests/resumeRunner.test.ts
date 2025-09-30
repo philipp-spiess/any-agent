@@ -23,7 +23,7 @@ test('main runs resumeSession with payload data', async () => {
   await writeFile(signalPath, `${JSON.stringify(payload)}\n`, { encoding: 'utf8' })
 
   const resumeModule = await import('../src/resume')
-  const resumeSpy = vi.mocked(resumeModule.resumeSession)
+  const resumeSpy = resumeModule.resumeSession as ReturnType<typeof vi.fn>
   resumeSpy.mockResolvedValue(7)
 
   const { main } = await import('../src/resumeRunner')
@@ -44,8 +44,12 @@ test('main reports errors for malformed payloads', async () => {
     encoding: 'utf8',
   })
 
+  const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
   const { main } = await import('../src/resumeRunner')
   await main(signalPath)
 
   expect(process.exitCode).toBe(1)
+  expect(consoleErrorSpy).toHaveBeenCalled()
+  consoleErrorSpy.mockRestore()
 })
