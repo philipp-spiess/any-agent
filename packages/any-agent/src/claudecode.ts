@@ -36,6 +36,7 @@ type ClaudeMessageBase = {
   timestamp?: string
   parentUuid?: string | null
   isSidechain?: boolean
+  isMeta?: boolean
   sessionId?: string
   cwd?: string
   costUSD?: number
@@ -76,6 +77,86 @@ type ClaudeUsageDetail = {
 const MAX_HEAD_RECORDS = 20
 const DEFAULT_LIMIT = Number.POSITIVE_INFINITY
 const CLAUDE_FILE_EXTENSION = '.jsonl'
+const MAX_SUMMARY_LINES = 3
+
+const IGNORED_STATUS_MESSAGES = new Set([
+  '[request interrupted by user]',
+  '[request aborted by user]',
+  '[request cancelled by user]',
+])
+
+const COMMAND_ENVELOPE_PATTERN = /^<(?:command|local)-[a-z-]+>/i
+const SHELL_PROMPT_PATTERN = /^[α-ωΑ-Ω]\s/i
+
+const NON_PROMPT_PREFIXES = [
+  'npm ',
+  'npm:',
+  'npm error',
+  'node:',
+  'node.js',
+  'error:',
+  'fatal:',
+  'warning:',
+  'traceback (most recent call last):',
+  'usage:',
+  'hint:',
+  'note:',
+  'code:',
+  'requirestack',
+]
+
+const NOISY_LINE_PREFIXES = [
+  'npm ',
+  'npm:',
+  'npm error',
+  'npm warn',
+  'node:',
+  'node.js',
+  'error:',
+  'fatal:',
+  'warning:',
+  'traceback (most recent call last):',
+  'usage:',
+  'hint:',
+  'note:',
+  'throw ',
+  'at ',
+  'code:',
+  'requirestack',
+]
+
+const PROMPT_KEYWORD_PATTERN = new RegExp(
+  '\\b(' +
+    [
+      'fix',
+      'please',
+      'should',
+      'update',
+      'change',
+      'add',
+      'remove',
+      'create',
+      'write',
+      'implement',
+      'refactor',
+      'investigate',
+      'explain',
+      'help',
+      'why',
+      'what',
+      'how',
+      'need',
+      'ensure',
+      'make',
+      'build',
+      "let's",
+      'optimize',
+      'review',
+      'check',
+    ].join('|') +
+    ')\\b',
+  'i',
+)
 
 const defaultPricingFetcher = new LiteLLMPricingFetcher()
 
@@ -405,6 +486,7 @@ async function parseTranscriptFile(
         ? (parsed.parentUuid as string | null | undefined)
         : undefined,
       isSidechain: Boolean(parsed.isSidechain),
+      isMeta: Boolean(parsed.isMeta),
       sessionId: typeof parsed.sessionId === 'string' ? parsed.sessionId : undefined,
       cwd: typeof parsed.cwd === 'string' ? parsed.cwd : undefined,
       costUSD: typeof parsed.costUSD === 'number' ? parsed.costUSD : undefined,
@@ -520,10 +602,14 @@ function createSessionSummary(
   const modelUsage = aggregateUsageByModel(usageMessages)
   const blendedTokens = blendedTokenTotal(tokenUsage)
 
-  const firstUserMessage = findFirstUserMessage(transcript)
-  const preview = firstUserMessage ? summarizeMessage(firstUserMessage) : null
+  const promptMessages = findPromptUserMessages(transcript)
+  if (promptMessages.length === 0) {
+    return null
+  }
+  const rootUserMessage = promptMessages[0]
+  const preview = rootUserMessage ? summarizeMessage(rootUserMessage) : null
   const cwd = deriveWorkingDirectory(transcript, file)
-  const forkSignature = firstUserMessage ? summarizeMessage(firstUserMessage, 120) : null
+  const forkSignature = rootUserMessage ? summarizeMessage(rootUserMessage, 120) : null
   const resumeTarget = findSessionId(transcript) ?? leaf.uuid
 
   const primaryModel = selectPrimaryModel(modelUsage)
@@ -678,44 +764,99 @@ function aggregateUsageByModel(
   return perModel
 }
 
-function findFirstUserMessage(
+function findPromptUserMessages(
   transcript: ClaudeMessageRecord[],
-): ClaudeMessageRecord | undefined {
-  return transcript.find(message => message.type === 'user')
+): ClaudeMessageRecord[] {
+  const prompts: ClaudeMessageRecord[] = []
+
+  for (const message of transcript) {
+    if (!isPromptCandidate(message)) {
+      continue
+    }
+    prompts.push(message)
+  }
+
+  return prompts
+}
+
+function isPromptCandidate(message: ClaudeMessageRecord): boolean {
+  if (message.type !== 'user') {
+    return false
+  }
+  if (message.isSidechain) {
+    return false
+  }
+  if (message.isMeta) {
+    return false
+  }
+
+  const raw = message.raw as Record<string, unknown>
+  if (raw && typeof raw === 'object') {
+    if ('toolUseResult' in raw) {
+      return false
+    }
+  }
+
+  const content = message.message?.content
+  if (Array.isArray(content)) {
+    if (content.some(part => isToolResultPart(part))) {
+      return false
+    }
+  }
+
+  const normalized = getNormalizedMessageText(message)
+  if (!normalized) {
+    return false
+  }
+
+  const lower = normalized.toLowerCase()
+  if (IGNORED_STATUS_MESSAGES.has(lower)) {
+    return false
+  }
+  if (isCommandEnvelope(normalized)) {
+    return false
+  }
+  if (SHELL_PROMPT_PATTERN.test(normalized)) {
+    return false
+  }
+
+  if (NON_PROMPT_PREFIXES.some(prefix => lower.startsWith(prefix))) {
+    if (!hasPromptCue(normalized)) {
+      return false
+    }
+  }
+
+  return true
+}
+
+function isToolResultPart(part: unknown): boolean {
+  if (!part || typeof part !== 'object') {
+    return false
+  }
+  const record = part as Record<string, unknown>
+  if (record.type === 'tool_result') {
+    return true
+  }
+  if (typeof record.tool_use_id === 'string') {
+    return true
+  }
+  return false
+}
+
+function isCommandEnvelope(value: string): boolean {
+  return COMMAND_ENVELOPE_PATTERN.test(value)
 }
 
 function summarizeMessage(message: ClaudeMessageRecord, maxLength = 80): string | null {
-  const payload = message.message
-  if (!payload) {
+  const normalized = getNormalizedMessageText(message)
+  if (!normalized) {
     return null
   }
-
-  const content = payload.content
-  if (typeof content === 'string') {
-    return truncate(content, maxLength)
-  }
-
-  if (Array.isArray(content) && content.length > 0) {
-    const first = content[0]
-    if (typeof first === 'string') {
-      return truncate(first, maxLength)
-    }
-    if (first && typeof first === 'object') {
-      const record = first as Record<string, unknown>
-      if (typeof record.content === 'string') {
-        return truncate(record.content, maxLength)
-      }
-      if (typeof record.text === 'string') {
-        return truncate(record.text, maxLength)
-      }
-    }
-  }
-
-  return null
+  return truncate(normalized, maxLength)
 }
 
 function truncate(value: string, maxLength: number): string {
-  const normalized = value.replace(/\s+/g, ' ').trim()
+  const normalized = collapseWhitespace(value)
   if (normalized.length <= maxLength) {
     return normalized
   }
@@ -820,4 +961,129 @@ function formatRelativeTime(date: Date, now: Date = new Date()): string {
   }
 
   return formatter.format(0, 'second')
+}
+
+function getNormalizedMessageText(message: ClaudeMessageRecord): string | null {
+  const candidates = extractNormalizedCandidates(message.message)
+  return candidates[0] ?? null
+}
+
+function extractNormalizedCandidates(
+  payload: ClaudeMessageBase['message'],
+): string[] {
+  if (!payload) {
+    return []
+  }
+
+  const content = payload.content
+
+  if (typeof content === 'string') {
+    const normalized = normalizeStringContent(content)
+    return normalized ? [normalized] : []
+  }
+
+  if (Array.isArray(content)) {
+    const results: string[] = []
+    for (const part of content) {
+      if (typeof part === 'string') {
+        const normalized = normalizeStringContent(part)
+        if (normalized) {
+          results.push(normalized)
+        }
+        continue
+      }
+      if (part && typeof part === 'object') {
+        const record = part as Record<string, unknown>
+        const fields = ['content', 'text']
+        for (const field of fields) {
+          const value = record[field]
+          if (typeof value === 'string') {
+            const normalized = normalizeStringContent(value)
+            if (normalized) {
+              results.push(normalized)
+            }
+          }
+        }
+      }
+    }
+    return results
+  }
+
+  return []
+}
+
+function normalizeStringContent(value: string, maxLines = MAX_SUMMARY_LINES): string | null {
+  const lines = extractMeaningfulLines(value)
+  if (lines.length === 0) {
+    return null
+  }
+
+  const selected = lines.slice(0, maxLines)
+  const merged = selected.join(' ')
+  const normalized = collapseWhitespace(merged)
+  return normalized.length > 0 ? normalized : null
+}
+
+function extractMeaningfulLines(value: string): string[] {
+  const lines: string[] = []
+  for (const rawLine of value.split(/\r?\n/)) {
+    const trimmed = rawLine.trim()
+    if (!trimmed) {
+      continue
+    }
+
+    const lower = trimmed.toLowerCase()
+    if (IGNORED_STATUS_MESSAGES.has(lower)) {
+      continue
+    }
+    if (isCommandEnvelope(trimmed)) {
+      continue
+    }
+    if (SHELL_PROMPT_PATTERN.test(trimmed)) {
+      continue
+    }
+
+    if (NOISY_LINE_PREFIXES.some(prefix => lower.startsWith(prefix))) {
+      if (!hasPromptCue(trimmed)) {
+        continue
+      }
+    }
+
+    if (!/[a-z]/i.test(trimmed) && !/\d/.test(trimmed)) {
+      continue
+    }
+
+    lines.push(trimmed)
+  }
+  return lines
+}
+
+function collapseWhitespace(value: string): string {
+  return value.replace(/\s+/g, ' ').trim()
+}
+
+function hasPromptCue(value: string): boolean {
+  const lower = value.toLowerCase()
+  if (PROMPT_KEYWORD_PATTERN.test(lower)) {
+    return true
+  }
+
+  if (lower.includes('?')) {
+    return true
+  }
+
+  const cuePhrases = [
+    'can you',
+    'can we',
+    'could you',
+    'could we',
+    'would you',
+    'would we',
+    'should we',
+    'should i',
+    "let's",
+    'let us',
+  ]
+
+  return cuePhrases.some(phrase => lower.includes(phrase))
 }
