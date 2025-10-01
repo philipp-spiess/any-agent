@@ -2,9 +2,22 @@
   "name": "any-agent",
   "version": "0.1.5",
   "packageManager": "bun@1.2.22",
-  "description": "Manage all your coding agents in one place",
+  "description": "Resume your work from any coding agent",
   "type": "module",
   "license": "MIT",
+  "keywords": [
+    "ai",
+    "agent",
+    "coding-agent",
+    "claude",
+    "claudecode",
+    "cursor",
+    "codex",
+    "aider",
+    "openai",
+    "anthropic",
+    "session-management"
+  ],
   "homepage": "https://github.com/philipp-spiess/any-agent#readme",
   "bugs": {
     "url": "https://github.com/philipp-spiess/any-agent/issues"
