@@ -10,6 +10,7 @@ import {
   type TokenUsage,
 } from './codex'
 import { LiteLLMPricingFetcher, type LiteLLMModelPricing } from './pricing'
+import type { UnifiedTranscript, MessageItem } from './types'
 
 export const CLAUDE_CODE_BRAND_COLOR = '#f97316'
 
@@ -607,8 +608,7 @@ function createSessionSummary(
     return null
   }
   const rootUserMessage = promptMessages[0]
-  const latestUserMessage = promptMessages[promptMessages.length - 1]
-  const preview = latestUserMessage ? summarizeMessage(latestUserMessage) : null
+  const preview = rootUserMessage ? summarizeMessage(rootUserMessage) : null
   const cwd = deriveWorkingDirectory(transcript, file)
   const forkSignature = rootUserMessage ? summarizeMessage(rootUserMessage, 120) : null
   const resumeTarget = findSessionId(transcript) ?? leaf.uuid
@@ -634,7 +634,16 @@ function createSessionSummary(
       cwd,
       resumeSessionId: resumeTarget,
     },
-    head: transcript.slice(0, MAX_HEAD_RECORDS).map(entry => entry.raw),
+    head: transcript.slice(0, MAX_HEAD_RECORDS).map(entry => ({
+      uuid: entry.uuid,
+      type: entry.type,
+      timestamp: entry.timestamp,
+      parentUuid: entry.parentUuid,
+      isSidechain: entry.isSidechain,
+      isMeta: entry.isMeta,
+      message: entry.message,
+      raw: entry.raw,
+    })),
     tokenUsage,
     blendedTokens,
     isFork: false,
@@ -1087,4 +1096,201 @@ function hasPromptCue(value: string): boolean {
   ]
 
   return cuePhrases.some(phrase => lower.includes(phrase))
+}
+
+/**
+ * Convert a Claude Code SessionSummary to UnifiedTranscript format
+ */
+export function claudeCodeSessionToUnifiedTranscript(session: SessionSummary): UnifiedTranscript {
+  const messages: MessageItem[] = []
+
+  // Parse the head records to extract messages
+  for (const record of session.head) {
+    if (!record || typeof record !== 'object') {
+      continue
+    }
+
+    const entry = record as ClaudeMessageBase
+    const type = entry.raw?.type
+
+    // Skip meta messages
+    if (entry.isMeta) {
+      continue
+    }
+
+    // User messages
+    if (type === 'user') {
+      const content = entry.message?.content
+      let text = ''
+
+      if (typeof content === 'string') {
+        text = content
+      } else if (Array.isArray(content)) {
+        // Extract text from content array
+        for (const part of content) {
+          if (typeof part === 'string') {
+            text += part
+          } else if (part && typeof part === 'object') {
+            const partObj = part as Record<string, unknown>
+            if (partObj.type === 'text' && typeof partObj.text === 'string') {
+              text += partObj.text
+            }
+          }
+        }
+      }
+
+      if (text.trim()) {
+        messages.push({
+          role: 'user',
+          text: text.trim(),
+        })
+      }
+    }
+
+    // Assistant messages
+    if (type === 'assistant') {
+      const content = entry.message?.content
+
+      if (Array.isArray(content)) {
+        for (const part of content) {
+          if (!part || typeof part !== 'object') {
+            continue
+          }
+
+          const partObj = part as Record<string, unknown>
+
+          // Text responses
+          if (partObj.type === 'text' && typeof partObj.text === 'string') {
+            messages.push({
+              role: 'assistant',
+              text: partObj.text,
+            })
+          }
+
+          // Tool use
+          if (partObj.type === 'tool_use') {
+            const toolName = String(partObj.name ?? '')
+            const input = partObj.input as Record<string, unknown> | undefined
+
+            if (toolName === 'Read') {
+              const offset = typeof input?.offset === 'number' ? input.offset : 0
+              const limit = typeof input?.limit === 'number' ? input.limit : 0
+              messages.push({
+                role: 'assistant',
+                call: {
+                  tool: 'ClaudeCodeRead',
+                  file: String(input?.file_path ?? ''),
+                  lines: limit > 0 ? `${offset}-${offset + limit}` : undefined,
+                },
+              })
+            } else if (toolName === 'Edit') {
+              const oldStr = String(input?.old_string ?? '')
+              const newStr = String(input?.new_string ?? '')
+              const diff = `- ${oldStr}\n+ ${newStr}`
+              messages.push({
+                role: 'assistant',
+                call: {
+                  tool: 'ClaudeCodeEdit',
+                  file: String(input?.file_path ?? ''),
+                  diff,
+                },
+              })
+            } else if (toolName === 'Write') {
+              messages.push({
+                role: 'assistant',
+                call: {
+                  tool: 'ClaudeCodeWrite',
+                  file: String(input?.file_path ?? ''),
+                  content: String(input?.content ?? ''),
+                },
+              })
+            } else if (toolName === 'Bash') {
+              messages.push({
+                role: 'assistant',
+                call: {
+                  tool: 'ClaudeCodeBash',
+                  command: String(input?.command ?? ''),
+                },
+              })
+            } else if (toolName === 'Glob') {
+              messages.push({
+                role: 'assistant',
+                call: {
+                  tool: 'ClaudeCodeGlob',
+                  pattern: String(input?.pattern ?? ''),
+                },
+              })
+            } else if (toolName === 'Grep') {
+              messages.push({
+                role: 'assistant',
+                call: {
+                  tool: 'ClaudeCodeGrep',
+                  pattern: String(input?.pattern ?? ''),
+                },
+              })
+            } else {
+              // Unknown tool - preserve it
+              messages.push({
+                role: 'assistant',
+                call: {
+                  tool: 'Unknown',
+                  name: toolName,
+                  input: input as Record<string, unknown>,
+                },
+              })
+            }
+          }
+        }
+      }
+    }
+
+    // Tool results (from user messages with tool_result content)
+    if (type === 'user' && entry.message?.content) {
+      const content = entry.message.content
+      if (Array.isArray(content)) {
+        for (const part of content) {
+          if (!part || typeof part !== 'object') {
+            continue
+          }
+
+          const partObj = part as Record<string, unknown>
+          if (partObj.type === 'tool_result' && typeof partObj.content === 'string') {
+            // Find the last tool call and add the output to it
+            for (let i = messages.length - 1; i >= 0; i--) {
+              const msg = messages[i]
+              if (msg.role === 'assistant' && 'call' in msg) {
+                if (msg.call.tool === 'ClaudeCodeBash') {
+                  msg.call.output = partObj.content
+                } else if (msg.call.tool === 'ClaudeCodeGlob') {
+                  msg.call.results = partObj.content.split('\n').filter(Boolean)
+                } else if (msg.call.tool === 'ClaudeCodeGrep') {
+                  msg.call.results = partObj.content
+                } else if (msg.call.tool === 'ClaudeCodeRead') {
+                  msg.call.lines = partObj.content
+                } else if (msg.call.tool === 'Unknown') {
+                  msg.call.output = partObj.content
+                }
+                break
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return {
+    v: 1,
+    id: session.id,
+    source: session.source,
+    timestamp: session.timestamp,
+    relativeTime: session.relativeTime,
+    preview: session.preview ?? '',
+    model: session.model ?? 'unknown',
+    blendedTokens: session.blendedTokens,
+    costUsd: session.costUsd,
+    messageCount: session.messageCount,
+    branchMarker: session.branchMarker,
+    messages,
+  }
 }

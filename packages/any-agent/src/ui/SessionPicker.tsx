@@ -3,9 +3,16 @@ import { Box, Text, useApp, useInput, useStdout } from "ink";
 import { BarChart, Sparkline, type BarChartData } from "@pppp606/ink-chart";
 import os from "node:os";
 import path from "node:path";
+import fs from "node:fs";
 import type { SessionSummary } from "../codex";
-import { CODEX_BRAND_COLOR } from "../codex";
-import { CLAUDE_CODE_BRAND_COLOR } from "../claudecode";
+import {
+  CODEX_BRAND_COLOR,
+  codexSessionToUnifiedTranscript,
+} from "../codex";
+import {
+  CLAUDE_CODE_BRAND_COLOR,
+  claudeCodeSessionToUnifiedTranscript,
+} from "../claudecode";
 import { formatUsd } from "../pricing";
 
 const HEADER_FOOTPRINT = 2;
@@ -167,6 +174,37 @@ export const SessionPicker: React.FC<SessionPickerProps> = ({
       return;
     }
 
+    // Check for Ctrl+Enter via raw escape sequence
+    if (input === "[27;5;13~") {
+      const session = sessions[highlightedIndex];
+      if (session) {
+        const transcript =
+          session.source === "claude-code"
+            ? claudeCodeSessionToUnifiedTranscript(session)
+            : codexSessionToUnifiedTranscript(session);
+
+        console.error("=== TRANSCRIPT DATA ===");
+        console.error(JSON.stringify(transcript, null, 2));
+
+        // Save to ./tmp directory
+        const tmpDir = path.join(process.cwd(), "tmp");
+        if (!fs.existsSync(tmpDir)) {
+          fs.mkdirSync(tmpDir, { recursive: true });
+        }
+
+        const timestamp = new Date()
+          .toISOString()
+          .replace(/:/g, "-")
+          .replace(/\..+/, "");
+        const filename = `transcript-${timestamp}.json`;
+        const filePath = path.join(tmpDir, filename);
+
+        fs.writeFileSync(filePath, JSON.stringify(transcript, null, 2), "utf-8");
+        console.error(`Saved transcript to: ${filePath}`);
+      }
+      return;
+    }
+
     if (key.upArrow || input === "k") {
       setHighlightedIndex((prev) => {
         const next = (prev - 1 + sessions.length) % sessions.length;
@@ -218,7 +256,15 @@ export const SessionPicker: React.FC<SessionPickerProps> = ({
           {hasSparkline ? (
             <>
               <Text color={HEADER_COLOR}>
-                {`${formatSiSuffix(totalTokens)} total tokens${totalCost > 0 ? ` · ${formatUsd(totalCost).replace('$', '')} total costs` : ""}${chartMetrics.sparkline.peakDay ? ` · peak ${chartMetrics.sparkline.peakDay}` : ""}`}
+                {`${formatSiSuffix(totalTokens)} total tokens${
+                  totalCost > 0
+                    ? ` · ${formatUsd(totalCost).replace("$", "")} total costs`
+                    : ""
+                }${
+                  chartMetrics.sparkline.peakDay
+                    ? ` · peak ${chartMetrics.sparkline.peakDay}`
+                    : ""
+                }`}
               </Text>
               <Box width={Math.max(columns, 1)} justifyContent="flex-end">
                 <Sparkline
@@ -265,7 +311,10 @@ export const SessionPicker: React.FC<SessionPickerProps> = ({
           <Text color={MESSAGE_COLOR}>No agent sessions found.</Text>
         </Box>
       )}
-      <StatusLine selectedSession={sessions[highlightedIndex]} yoloMode={yoloMode} />
+      <StatusLine
+        selectedSession={sessions[highlightedIndex]}
+        yoloMode={yoloMode}
+      />
     </Box>
   );
 };
@@ -300,9 +349,7 @@ const SessionRow: React.FC<SessionRowProps> = ({
     ? pad(truncate(modelLabel, layout.modelWidth), layout.modelWidth)
     : "";
   const tokensLabel =
-    session.blendedTokens > 0
-      ? formatSiSuffix(session.blendedTokens)
-      : "";
+    session.blendedTokens > 0 ? formatSiSuffix(session.blendedTokens) : "";
   const tokensColumn = layout.showTokens
     ? pad(truncate(tokensLabel, layout.tokensWidth), layout.tokensWidth)
     : "";
@@ -310,12 +357,20 @@ const SessionRow: React.FC<SessionRowProps> = ({
     ? pad(truncate(repoPath, layout.repoWidth), layout.repoWidth)
     : "";
   const baseMessage = session.preview ?? "(no user message)";
-  const marker = session.branchMarker?.trim().length ? session.branchMarker : " ";
-  const messageWithoutMarker = truncate(baseMessage, Math.max(0, layout.messageWidth - 2));
+  const marker = session.branchMarker?.trim().length
+    ? session.branchMarker
+    : " ";
+  const messageWithoutMarker = truncate(
+    baseMessage,
+    Math.max(0, layout.messageWidth - 2)
+  );
   const indicator = isSelected ? "➤" : " ";
 
   const leftColor = isSelected ? MESSAGE_COLOR : HEADER_COLOR;
-  const brandColor = session.source === "claude-code" ? CLAUDE_CODE_BRAND_COLOR : CODEX_BRAND_COLOR;
+  const brandColor =
+    session.source === "claude-code"
+      ? CLAUDE_CODE_BRAND_COLOR
+      : CODEX_BRAND_COLOR;
 
   return (
     <Box>
@@ -355,7 +410,9 @@ const SessionRow: React.FC<SessionRowProps> = ({
           <Text color={HEADER_COLOR}> │ </Text>
           <Text color={HEADER_COLOR}>{marker}</Text>
           <Text color={HEADER_COLOR}> </Text>
-          <Text color={isSelected ? brandColor : MESSAGE_COLOR}>{messageWithoutMarker}</Text>
+          <Text color={isSelected ? brandColor : MESSAGE_COLOR}>
+            {messageWithoutMarker}
+          </Text>
         </>
       )}
     </Box>
@@ -471,7 +528,13 @@ const adjustMessageWidth = (layout: TableLayout, columns: number) => {
   layout.messageWidth = Math.max(0, available);
 };
 
-const KEY_TO_PROP: Record<ColumnKey, keyof Pick<TableLayout, "timeWidth" | "modelWidth" | "tokensWidth" | "repoWidth" | "messageWidth">> = {
+const KEY_TO_PROP: Record<
+  ColumnKey,
+  keyof Pick<
+    TableLayout,
+    "timeWidth" | "modelWidth" | "tokensWidth" | "repoWidth" | "messageWidth"
+  >
+> = {
   time: "timeWidth",
   model: "modelWidth",
   tokens: "tokensWidth",
@@ -497,15 +560,19 @@ interface StatusLineProps {
   yoloMode: boolean;
 }
 
-const StatusLine: React.FC<StatusLineProps> = ({ selectedSession, yoloMode }) => {
-  const brandColor = selectedSession?.source === "claude-code"
-    ? CLAUDE_CODE_BRAND_COLOR
-    : CODEX_BRAND_COLOR;
+const StatusLine: React.FC<StatusLineProps> = ({
+  selectedSession,
+  yoloMode,
+}) => {
+  const brandColor =
+    selectedSession?.source === "claude-code"
+      ? CLAUDE_CODE_BRAND_COLOR
+      : CODEX_BRAND_COLOR;
 
   return (
     <Box marginTop={1}>
       <Text color={selectedSession ? brandColor : KEY_COLOR}>⏎ </Text>
-      <Text>{yoloMode ? 'resume in yolo mode' : 'resume'}</Text>
+      <Text>{yoloMode ? "resume in yolo mode" : "resume"}</Text>
       <Text color={HEADER_COLOR}> │ </Text>
       <Text color={KEY_COLOR}>⇥ </Text>
       <Text>toggle yolo mode</Text>
@@ -671,7 +738,13 @@ function computeSparklineSeries(
   dayCount: number
 ): SparklineMetrics {
   if (dayCount <= 0) {
-    return { points: [], totalTokens: 0, peakDay: null, dayCount: 0, hasActivity: false };
+    return {
+      points: [],
+      totalTokens: 0,
+      peakDay: null,
+      dayCount: 0,
+      hasActivity: false,
+    };
   }
 
   const today = startOfDay(new Date());
@@ -706,19 +779,23 @@ function computeSparklineSeries(
   }
 
   const totalTokens = points.reduce((acc, value) => acc + value, 0);
-  const peakDay = maxTokens > 0 && maxIndex >= 0 ? formatDayLabel(labels[maxIndex]) : null;
+  const peakDay =
+    maxTokens > 0 && maxIndex >= 0 ? formatDayLabel(labels[maxIndex]) : null;
   const hasActivity = maxTokens > 0;
 
   return { points, totalTokens, peakDay, dayCount, hasActivity };
 }
 
 function computeProviderBars(sessions: SessionSummary[]): BarChartData[] {
-  const buckets: Record<SessionSummary["source"], {
-    label: string;
-    tokens: number;
-    messages: number;
-    color: string;
-  }> = {
+  const buckets: Record<
+    SessionSummary["source"],
+    {
+      label: string;
+      tokens: number;
+      messages: number;
+      color: string;
+    }
+  > = {
     codex: {
       label: "Codex",
       tokens: 0,
@@ -747,7 +824,11 @@ function computeProviderBars(sessions: SessionSummary[]): BarChartData[] {
     if (bucket.tokens <= 0 && bucket.messages <= 0) {
       continue;
     }
-    data.push({ label: bucket.label, value: bucket.tokens, color: bucket.color });
+    data.push({
+      label: bucket.label,
+      value: bucket.tokens,
+      color: bucket.color,
+    });
   }
 
   return data;

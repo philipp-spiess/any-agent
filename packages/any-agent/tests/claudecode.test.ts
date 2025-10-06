@@ -1,9 +1,10 @@
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { expect, test } from 'vitest'
-import { getClaudeSessions } from '../src/claudecode'
+import { describe, expect, test } from 'vitest'
+import { getClaudeSessions, claudeCodeSessionToUnifiedTranscript } from '../src/claudecode'
 import { LiteLLMPricingFetcher } from '../src/pricing'
+import type { SessionSummary } from '../src/codex'
 
 test('getClaudeSessions returns empty array when Claude directories are missing', async () => {
   const missingDir = path.join(os.tmpdir(), 'claude-non-existent')
@@ -116,7 +117,7 @@ test('getClaudeSessions reads transcript files and returns session summaries', a
   expect(totalCostUsd).toBeCloseTo(0.00475, 5)
 })
 
-test('getClaudeSessions uses latest non-sidechain user message for preview', async () => {
+test('getClaudeSessions uses first non-sidechain user message for preview', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'claude-preview-'))
   const claudeDir = path.join(root, '.claude', 'projects')
   const projectId = '-Users-preview-project'
@@ -209,7 +210,7 @@ test('getClaudeSessions uses latest non-sidechain user message for preview', asy
 
   expect(sessions).toHaveLength(1)
   const [session] = sessions
-  expect(session.preview).toBe('Focus on writing integration tests next')
+  expect(session.preview).toBe('Start a brand new project')
   expect(session.forkSignature).toBe('Start a brand new project')
 })
 
@@ -380,7 +381,7 @@ test('filters meta, status, and tool result user messages from previews', async 
 
   expect(sessions).toHaveLength(1)
   const [session] = sessions
-  expect(session.preview).toBe('Also ensure the CLI resume script resolves correctly.')
+  expect(session.preview).toBe('Fix the packaging error that breaks npx execution.')
   expect(session.forkSignature).toBe('Fix the packaging error that breaks npx execution.')
 })
 
@@ -704,5 +705,439 @@ test('marks forked sessions and assigns branch markers', async () => {
     outputTokens: 30,
     reasoningOutputTokens: 0,
     totalTokens: 160,
+  })
+})
+
+describe('claudeCodeSessionToUnifiedTranscript', () => {
+  test('converts user messages', () => {
+    const session: SessionSummary = {
+      id: 'test-claude-1',
+      source: 'claude-code',
+      path: '/test/path.jsonl',
+      resumeTarget: 'session-id-1',
+      timestamp: new Date('2025-10-02T22:08:46.264Z'),
+      timestampUtc: '2025-10-02T22:08:46.264Z',
+      relativeTime: '14 minutes ago',
+      preview: 'The current ctrl+enter feature',
+      meta: null,
+      head: [
+        {
+          uuid: 'uuid-1',
+          type: 'user',
+          message: {
+            role: 'user',
+            content: 'The current ctrl+enter feature: make it store the transcript',
+          },
+          raw: {
+            type: 'user',
+            message: {
+              role: 'user',
+              content: 'The current ctrl+enter feature: make it store the transcript',
+            },
+          },
+        },
+      ],
+      tokenUsage: {
+        inputTokens: 1000,
+        cachedInputTokens: 500,
+        outputTokens: 200,
+        reasoningOutputTokens: 0,
+        totalTokens: 1200,
+      },
+      blendedTokens: 700,
+      isFork: false,
+      branchMarker: ' ',
+      forkSignature: null,
+      model: 'claude-sonnet-4-5-20250929',
+      costUsd: 0.092,
+      modelUsage: new Map(),
+      messageCount: 1,
+    }
+
+    const result = claudeCodeSessionToUnifiedTranscript(session)
+
+    expect(result.v).toBe(1)
+    expect(result.source).toBe('claude-code')
+    expect(result.messages).toHaveLength(1)
+    expect(result.messages[0]).toEqual({
+      role: 'user',
+      text: 'The current ctrl+enter feature: make it store the transcript',
+    })
+  })
+
+  test('converts assistant text responses', () => {
+    const session: SessionSummary = {
+      id: 'test-claude-2',
+      source: 'claude-code',
+      path: '/test/path.jsonl',
+      resumeTarget: 'session-id-2',
+      timestamp: new Date('2025-10-02T22:08:46.264Z'),
+      timestampUtc: '2025-10-02T22:08:46.264Z',
+      relativeTime: '14 minutes ago',
+      preview: 'Test text',
+      meta: null,
+      head: [
+        {
+          uuid: 'uuid-2',
+          type: 'assistant',
+          message: {
+            role: 'assistant',
+            content: [
+              {
+                type: 'text',
+                text: "I'll help you update the transcript upload feature.",
+              },
+            ],
+          },
+          raw: {
+            type: 'assistant',
+            message: {
+              role: 'assistant',
+              content: [
+                {
+                  type: 'text',
+                  text: "I'll help you update the transcript upload feature.",
+                },
+              ],
+            },
+          },
+        },
+      ],
+      tokenUsage: {
+        inputTokens: 1000,
+        cachedInputTokens: 500,
+        outputTokens: 200,
+        reasoningOutputTokens: 0,
+        totalTokens: 1200,
+      },
+      blendedTokens: 700,
+      isFork: false,
+      branchMarker: ' ',
+      forkSignature: null,
+      model: 'claude-sonnet-4-5-20250929',
+      costUsd: 0.092,
+      modelUsage: new Map(),
+      messageCount: 1,
+    }
+
+    const result = claudeCodeSessionToUnifiedTranscript(session)
+
+    expect(result.messages).toHaveLength(1)
+    expect(result.messages[0]).toEqual({
+      role: 'assistant',
+      text: "I'll help you update the transcript upload feature.",
+    })
+  })
+
+  test('converts Read tool calls with results', () => {
+    const session: SessionSummary = {
+      id: 'test-claude-3',
+      source: 'claude-code',
+      path: '/test/path.jsonl',
+      resumeTarget: 'session-id-3',
+      timestamp: new Date('2025-10-02T22:08:46.264Z'),
+      timestampUtc: '2025-10-02T22:08:46.264Z',
+      relativeTime: '14 minutes ago',
+      preview: 'Test read',
+      meta: null,
+      head: [
+        {
+          uuid: 'uuid-3',
+          type: 'assistant',
+          message: {
+            role: 'assistant',
+            content: [
+              {
+                type: 'tool_use',
+                id: 'toolu_test',
+                name: 'Read',
+                input: {
+                  file_path: '/test/file.ts',
+                  offset: 0,
+                  limit: 100,
+                },
+              },
+            ],
+          },
+          raw: {
+            type: 'assistant',
+          },
+        },
+        {
+          uuid: 'uuid-4',
+          type: 'user',
+          message: {
+            role: 'user',
+            content: [
+              {
+                type: 'tool_result',
+                tool_use_id: 'toolu_test',
+                content: '1→export const test = true\n2→',
+              },
+            ],
+          },
+          raw: {
+            type: 'user',
+          },
+        },
+      ],
+      tokenUsage: {
+        inputTokens: 1000,
+        cachedInputTokens: 500,
+        outputTokens: 200,
+        reasoningOutputTokens: 0,
+        totalTokens: 1200,
+      },
+      blendedTokens: 700,
+      isFork: false,
+      branchMarker: ' ',
+      forkSignature: null,
+      model: 'claude-sonnet-4-5-20250929',
+      costUsd: 0.092,
+      modelUsage: new Map(),
+      messageCount: 2,
+    }
+
+    const result = claudeCodeSessionToUnifiedTranscript(session)
+
+    expect(result.messages).toHaveLength(1)
+    expect(result.messages[0]).toMatchObject({
+      role: 'assistant',
+      call: {
+        tool: 'ClaudeCodeRead',
+        file: '/test/file.ts',
+      },
+    })
+    expect((result.messages[0] as any).call.lines).toContain('export const test = true')
+  })
+
+  test('converts Edit tool calls', () => {
+    const session: SessionSummary = {
+      id: 'test-claude-4',
+      source: 'claude-code',
+      path: '/test/path.jsonl',
+      resumeTarget: 'session-id-4',
+      timestamp: new Date('2025-10-02T22:08:46.264Z'),
+      timestampUtc: '2025-10-02T22:08:46.264Z',
+      relativeTime: '14 minutes ago',
+      preview: 'Test edit',
+      meta: null,
+      head: [
+        {
+          uuid: 'uuid-5',
+          type: 'assistant',
+          message: {
+            role: 'assistant',
+            content: [
+              {
+                type: 'tool_use',
+                id: 'toolu_edit',
+                name: 'Edit',
+                input: {
+                  file_path: '/test/file.ts',
+                  old_string: 'const x = 1',
+                  new_string: 'const x = 2',
+                },
+              },
+            ],
+          },
+          raw: {
+            type: 'assistant',
+          },
+        },
+      ],
+      tokenUsage: {
+        inputTokens: 1000,
+        cachedInputTokens: 500,
+        outputTokens: 200,
+        reasoningOutputTokens: 0,
+        totalTokens: 1200,
+      },
+      blendedTokens: 700,
+      isFork: false,
+      branchMarker: ' ',
+      forkSignature: null,
+      model: 'claude-sonnet-4-5-20250929',
+      costUsd: 0.092,
+      modelUsage: new Map(),
+      messageCount: 1,
+    }
+
+    const result = claudeCodeSessionToUnifiedTranscript(session)
+
+    expect(result.messages).toHaveLength(1)
+    expect(result.messages[0]).toEqual({
+      role: 'assistant',
+      call: {
+        tool: 'ClaudeCodeEdit',
+        file: '/test/file.ts',
+        diff: '- const x = 1\n+ const x = 2',
+      },
+    })
+  })
+
+  test('converts Bash tool calls with output', () => {
+    const session: SessionSummary = {
+      id: 'test-claude-5',
+      source: 'claude-code',
+      path: '/test/path.jsonl',
+      resumeTarget: 'session-id-5',
+      timestamp: new Date('2025-10-02T22:08:46.264Z'),
+      timestampUtc: '2025-10-02T22:08:46.264Z',
+      relativeTime: '14 minutes ago',
+      preview: 'Test bash',
+      meta: null,
+      head: [
+        {
+          uuid: 'uuid-6',
+          type: 'assistant',
+          message: {
+            role: 'assistant',
+            content: [
+              {
+                type: 'tool_use',
+                id: 'toolu_bash',
+                name: 'Bash',
+                input: {
+                  command: 'ls -la',
+                },
+              },
+            ],
+          },
+          raw: {
+            type: 'assistant',
+          },
+        },
+        {
+          uuid: 'uuid-7',
+          type: 'user',
+          message: {
+            role: 'user',
+            content: [
+              {
+                type: 'tool_result',
+                tool_use_id: 'toolu_bash',
+                content: 'total 8\ndrwxr-xr-x  2 user  staff  64 Oct  2 22:08 .',
+              },
+            ],
+          },
+          raw: {
+            type: 'user',
+          },
+        },
+      ],
+      tokenUsage: {
+        inputTokens: 1000,
+        cachedInputTokens: 500,
+        outputTokens: 200,
+        reasoningOutputTokens: 0,
+        totalTokens: 1200,
+      },
+      blendedTokens: 700,
+      isFork: false,
+      branchMarker: ' ',
+      forkSignature: null,
+      model: 'claude-sonnet-4-5-20250929',
+      costUsd: 0.092,
+      modelUsage: new Map(),
+      messageCount: 2,
+    }
+
+    const result = claudeCodeSessionToUnifiedTranscript(session)
+
+    expect(result.messages).toHaveLength(1)
+    expect(result.messages[0]).toEqual({
+      role: 'assistant',
+      call: {
+        tool: 'ClaudeCodeBash',
+        command: 'ls -la',
+        output: 'total 8\ndrwxr-xr-x  2 user  staff  64 Oct  2 22:08 .',
+      },
+    })
+  })
+
+  test('converts unknown tools', () => {
+    const session: SessionSummary = {
+      id: 'test-claude-6',
+      source: 'claude-code',
+      path: '/test/path.jsonl',
+      resumeTarget: 'session-id-6',
+      timestamp: new Date('2025-10-02T22:08:46.264Z'),
+      timestampUtc: '2025-10-02T22:08:46.264Z',
+      relativeTime: '14 minutes ago',
+      preview: 'Test unknown',
+      meta: null,
+      head: [
+        {
+          uuid: 'uuid-8',
+          type: 'assistant',
+          message: {
+            role: 'assistant',
+            content: [
+              {
+                type: 'tool_use',
+                id: 'toolu_unknown',
+                name: 'FutureTool',
+                input: {
+                  param1: 'value1',
+                  param2: 42,
+                },
+              },
+            ],
+          },
+          raw: {
+            type: 'assistant',
+          },
+        },
+        {
+          uuid: 'uuid-9',
+          type: 'user',
+          message: {
+            role: 'user',
+            content: [
+              {
+                type: 'tool_result',
+                tool_use_id: 'toolu_unknown',
+                content: 'Result from future tool',
+              },
+            ],
+          },
+          raw: {
+            type: 'user',
+          },
+        },
+      ],
+      tokenUsage: {
+        inputTokens: 1000,
+        cachedInputTokens: 500,
+        outputTokens: 200,
+        reasoningOutputTokens: 0,
+        totalTokens: 1200,
+      },
+      blendedTokens: 700,
+      isFork: false,
+      branchMarker: ' ',
+      forkSignature: null,
+      model: 'claude-sonnet-4-5-20250929',
+      costUsd: 0.092,
+      modelUsage: new Map(),
+      messageCount: 2,
+    }
+
+    const result = claudeCodeSessionToUnifiedTranscript(session)
+
+    expect(result.messages).toHaveLength(1)
+    expect(result.messages[0]).toEqual({
+      role: 'assistant',
+      call: {
+        tool: 'Unknown',
+        name: 'FutureTool',
+        input: {
+          param1: 'value1',
+          param2: 42,
+        },
+        output: 'Result from future tool',
+      },
+    })
   })
 })

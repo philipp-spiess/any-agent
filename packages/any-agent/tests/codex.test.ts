@@ -1,7 +1,8 @@
 import { fileURLToPath } from 'node:url'
-import { expect, test } from 'vitest'
-import { getSessions } from '../src/codex'
+import { describe, expect, test } from 'vitest'
+import { getSessions, codexSessionToUnifiedTranscript } from '../src/codex'
 import { LiteLLMPricingFetcher } from '../src/pricing'
+import type { SessionSummary } from '../src/codex'
 
 const fixtureHome = fileURLToPath(new URL('./fixtures/codex-home', import.meta.url))
 
@@ -76,4 +77,208 @@ test('getSessions reads fixture sessions and marks forks with pricing data', asy
 
   expect(totalBlendedTokens).toBe(2900)
   expect(totalCostUsd).toBeCloseTo(0.00605)
+})
+
+describe('codexSessionToUnifiedTranscript', () => {
+  test('converts user messages', () => {
+    const session: SessionSummary = {
+      id: 'test-codex-1',
+      source: 'codex',
+      path: '/test/path',
+      resumeTarget: 'test-codex-1',
+      timestamp: new Date('2025-10-02T22:21:16.000Z'),
+      timestampUtc: '2025-10-02T22:21:16.000Z',
+      relativeTime: '10 minutes ago',
+      preview: 'Write "hello" into the README',
+      meta: null,
+      head: [
+        {
+          type: 'event_msg',
+          payload: {
+            type: 'user_message',
+            message: 'Write "hello" into the README',
+            kind: 'plain',
+          },
+        },
+      ],
+      tokenUsage: {
+        inputTokens: 1000,
+        cachedInputTokens: 500,
+        outputTokens: 200,
+        reasoningOutputTokens: 100,
+        totalTokens: 1300,
+      },
+      blendedTokens: 800,
+      isFork: false,
+      branchMarker: ' ',
+      forkSignature: null,
+      model: 'gpt-5-codex',
+      costUsd: 0.05,
+      modelUsage: new Map(),
+      messageCount: 1,
+    }
+
+    const result = codexSessionToUnifiedTranscript(session)
+
+    expect(result.v).toBe(1)
+    expect(result.source).toBe('codex')
+    expect(result.messages).toHaveLength(1)
+    expect(result.messages[0]).toEqual({
+      role: 'user',
+      text: 'Write "hello" into the README',
+    })
+  })
+
+  test('converts agent reasoning', () => {
+    const session: SessionSummary = {
+      id: 'test-codex-2',
+      source: 'codex',
+      path: '/test/path',
+      resumeTarget: 'test-codex-2',
+      timestamp: new Date('2025-10-02T22:21:16.000Z'),
+      timestampUtc: '2025-10-02T22:21:16.000Z',
+      relativeTime: '10 minutes ago',
+      preview: 'Test reasoning',
+      meta: null,
+      head: [
+        {
+          type: 'event_msg',
+          payload: {
+            type: 'agent_reasoning',
+            text: '**Determining how to add "hello" to README**',
+          },
+        },
+      ],
+      tokenUsage: {
+        inputTokens: 1000,
+        cachedInputTokens: 500,
+        outputTokens: 200,
+        reasoningOutputTokens: 100,
+        totalTokens: 1300,
+      },
+      blendedTokens: 800,
+      isFork: false,
+      branchMarker: ' ',
+      forkSignature: null,
+      model: 'gpt-5-codex',
+      costUsd: 0.05,
+      modelUsage: new Map(),
+      messageCount: 1,
+    }
+
+    const result = codexSessionToUnifiedTranscript(session)
+
+    expect(result.messages).toHaveLength(1)
+    expect(result.messages[0]).toEqual({
+      role: 'assistant',
+      thinking: '**Determining how to add "hello" to README**',
+    })
+  })
+
+  test('converts agent text responses', () => {
+    const session: SessionSummary = {
+      id: 'test-codex-3',
+      source: 'codex',
+      path: '/test/path',
+      resumeTarget: 'test-codex-3',
+      timestamp: new Date('2025-10-02T22:21:16.000Z'),
+      timestampUtc: '2025-10-02T22:21:16.000Z',
+      relativeTime: '10 minutes ago',
+      preview: 'Test response',
+      meta: null,
+      head: [
+        {
+          type: 'event_msg',
+          payload: {
+            type: 'agent_message',
+            message: 'Added a closing hello line to the project docs in `README.md:19`.',
+          },
+        },
+      ],
+      tokenUsage: {
+        inputTokens: 1000,
+        cachedInputTokens: 500,
+        outputTokens: 200,
+        reasoningOutputTokens: 100,
+        totalTokens: 1300,
+      },
+      blendedTokens: 800,
+      isFork: false,
+      branchMarker: ' ',
+      forkSignature: null,
+      model: 'gpt-5-codex',
+      costUsd: 0.05,
+      modelUsage: new Map(),
+      messageCount: 1,
+    }
+
+    const result = codexSessionToUnifiedTranscript(session)
+
+    expect(result.messages).toHaveLength(1)
+    expect(result.messages[0]).toEqual({
+      role: 'assistant',
+      text: 'Added a closing hello line to the project docs in `README.md:19`.',
+    })
+  })
+
+  test('converts shell function calls with outputs', () => {
+    const session: SessionSummary = {
+      id: 'test-codex-4',
+      source: 'codex',
+      path: '/test/path',
+      resumeTarget: 'test-codex-4',
+      timestamp: new Date('2025-10-02T22:21:16.000Z'),
+      timestampUtc: '2025-10-02T22:21:16.000Z',
+      relativeTime: '10 minutes ago',
+      preview: 'Test shell',
+      meta: null,
+      head: [
+        {
+          type: 'response_item',
+          payload: {
+            type: 'function_call',
+            name: 'shell',
+            arguments: '{"command":["bash","-lc","ls -1"],"workdir":"/Users/philipp/dev/any-agent"}',
+            call_id: 'call_test',
+          },
+        },
+        {
+          type: 'response_item',
+          payload: {
+            type: 'function_call_output',
+            call_id: 'call_test',
+            output: '{"output":"README.md\\npackage.json\\n","metadata":{"exit_code":0,"duration_seconds":0.0}}',
+          },
+        },
+      ],
+      tokenUsage: {
+        inputTokens: 1000,
+        cachedInputTokens: 500,
+        outputTokens: 200,
+        reasoningOutputTokens: 100,
+        totalTokens: 1300,
+      },
+      blendedTokens: 800,
+      isFork: false,
+      branchMarker: ' ',
+      forkSignature: null,
+      model: 'gpt-5-codex',
+      costUsd: 0.05,
+      modelUsage: new Map(),
+      messageCount: 2,
+    }
+
+    const result = codexSessionToUnifiedTranscript(session)
+
+    expect(result.messages).toHaveLength(1)
+    expect(result.messages[0]).toEqual({
+      role: 'assistant',
+      call: {
+        tool: 'CodexShell',
+        command: 'bash -lc ls -1',
+        output: 'README.md\npackage.json\n',
+        exit_code: 0,
+      },
+    })
+  })
 })

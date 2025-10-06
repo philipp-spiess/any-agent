@@ -6,6 +6,7 @@ import path from 'node:path'
 import readline from 'node:readline'
 import { LiteLLMPricingFetcher } from './pricing'
 import type { LiteLLMModelPricing } from './pricing'
+import type { UnifiedTranscript, MessageItem } from './types'
 
 export const CODEX_BRAND_COLOR = 'cyan'
 
@@ -548,9 +549,7 @@ async function readHead(filePath: string, limit: number): Promise<{
         continue
       }
 
-      if (head.length < limit) {
-        head.push(parsed)
-      }
+      head.push(parsed)
 
       if (!meta && isSessionMeta(parsed)) {
         meta = parsed.payload
@@ -919,4 +918,116 @@ function summarize(message: string, maxLength = 80): string {
     return singleLine
   }
   return `${singleLine.slice(0, maxLength - 1)}…`
+}
+
+/**
+ * Convert a Codex SessionSummary to UnifiedTranscript format
+ */
+export function codexSessionToUnifiedTranscript(session: SessionSummary): UnifiedTranscript {
+  const messages: MessageItem[] = []
+
+  // Parse the head records to extract messages
+  for (const record of session.head) {
+    if (!record || typeof record !== 'object') {
+      continue
+    }
+
+    const entry = record as Record<string, unknown>
+    const type = entry.type
+
+    // User messages
+    if (type === 'event_msg') {
+      const payload = entry.payload as Record<string, unknown> | undefined
+      if (payload?.type === 'user_message' && typeof payload.message === 'string') {
+        messages.push({
+          role: 'user',
+          text: payload.message,
+        })
+      }
+      // Agent reasoning
+      if (payload?.type === 'agent_reasoning' && typeof payload.text === 'string') {
+        messages.push({
+          role: 'assistant',
+          thinking: payload.text,
+        })
+      }
+      // Agent text responses
+      if (payload?.type === 'agent_message' && typeof payload.message === 'string') {
+        messages.push({
+          role: 'assistant',
+          text: payload.message,
+        })
+      }
+    }
+
+    // Function calls (shell commands)
+    if (type === 'response_item') {
+      const payload = entry.payload as Record<string, unknown> | undefined
+      if (payload?.type === 'function_call' && payload.name === 'shell') {
+        let args: Record<string, unknown>
+        if (typeof payload.arguments === 'string') {
+          try {
+            args = JSON.parse(payload.arguments)
+          } catch {
+            continue
+          }
+        } else {
+          args = payload.arguments as Record<string, unknown>
+        }
+
+        const command = Array.isArray(args.command)
+          ? args.command.join(' ')
+          : String(args.command ?? '')
+
+        messages.push({
+          role: 'assistant',
+          call: {
+            tool: 'CodexShell',
+            command,
+          },
+        })
+      }
+
+      // Function call outputs
+      if (payload?.type === 'function_call_output' && typeof payload.output === 'string') {
+        let outputData: Record<string, unknown>
+        try {
+          outputData = JSON.parse(payload.output) as Record<string, unknown>
+        } catch {
+          continue
+        }
+        const output = String(outputData.output ?? '')
+        const exit_code = typeof outputData.metadata === 'object' && outputData.metadata !== null
+          ? (outputData.metadata as Record<string, unknown>).exit_code as number | undefined
+          : undefined
+
+        // Find the last shell tool call and add the output to it
+        for (let i = messages.length - 1; i >= 0; i--) {
+          const msg = messages[i]
+          if (msg.role === 'assistant' && 'call' in msg && msg.call.tool === 'CodexShell') {
+            msg.call.output = output
+            if (exit_code !== undefined) {
+              msg.call.exit_code = exit_code
+            }
+            break
+          }
+        }
+      }
+    }
+  }
+
+  return {
+    v: 1,
+    id: session.id,
+    source: session.source,
+    timestamp: session.timestamp,
+    relativeTime: session.relativeTime,
+    preview: session.preview ?? '',
+    model: session.model ?? 'unknown',
+    blendedTokens: session.blendedTokens,
+    costUsd: session.costUsd,
+    messageCount: session.messageCount,
+    branchMarker: session.branchMarker,
+    messages,
+  }
 }
