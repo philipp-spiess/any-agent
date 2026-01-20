@@ -197,7 +197,34 @@ export async function getClaudeSessions(
   const globalMessageKeys = new Set<string>()
   const sessionUsageDetails = new Map<string, ClaudeUsageDetail[]>()
 
-  const orderedLeaves = leafMessages.sort((a, b) => {
+  // Filter to only keep the latest leaf per file - this matches Claude Code's behavior
+  // of showing one session per conversation, not every branch endpoint
+  const latestLeafPerFile = new Map<string, ClaudeMessageRecord>()
+  for (const leaf of leafMessages) {
+    // Skip tool_result leaves - they're intermediate responses stored as branches
+    if (isToolResultLeaf(leaf)) {
+      continue
+    }
+
+    const file = leafToFile.get(leaf.uuid)
+    const filePath = file?.path ?? leaf.filePath
+    if (!filePath) {
+      continue
+    }
+
+    const existing = latestLeafPerFile.get(filePath)
+    if (!existing) {
+      latestLeafPerFile.set(filePath, leaf)
+    } else {
+      const existingTime = timestampToNumber(existing.timestamp) ?? 0
+      const leafTime = timestampToNumber(leaf.timestamp) ?? 0
+      if (leafTime > existingTime) {
+        latestLeafPerFile.set(filePath, leaf)
+      }
+    }
+  }
+
+  const orderedLeaves = Array.from(latestLeafPerFile.values()).sort((a, b) => {
     const timeA = timestampToNumber(a.timestamp) ?? 0
     const timeB = timestampToNumber(b.timestamp) ?? 0
     return timeA - timeB
@@ -851,6 +878,17 @@ function isToolResultPart(part: unknown): boolean {
     return true
   }
   return false
+}
+
+function isToolResultLeaf(message: ClaudeMessageRecord): boolean {
+  if (message.type !== 'user') {
+    return false
+  }
+  const content = message.message?.content
+  if (!Array.isArray(content) || content.length === 0) {
+    return false
+  }
+  return isToolResultPart(content[0])
 }
 
 function isCommandEnvelope(value: string): boolean {

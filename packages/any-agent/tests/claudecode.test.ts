@@ -684,21 +684,15 @@ test('marks forked sessions and assigns branch markers', async () => {
     pricingFetcher,
   })
 
-  expect(sessions).toHaveLength(2)
-  const [latest, base] = sessions
+  // Only the latest leaf per file is kept - this matches Claude Code's behavior
+  // of showing one session per conversation file
+  expect(sessions).toHaveLength(1)
+  const [latest] = sessions
 
-  expect(latest.isFork).toBe(true)
-  expect(latest.branchMarker).toBe('┌')
-  expect(base.isFork).toBe(false)
-  expect(base.branchMarker).toBe('┴')
+  expect(latest.id).toBe(forkAssistantUuid)
+  expect(latest.isFork).toBe(false) // No forking when only one session per file
+  expect(latest.branchMarker).toBe(' ')
 
-  expect(base.tokenUsage).toEqual({
-    inputTokens: 130,
-    cachedInputTokens: 0,
-    outputTokens: 40,
-    reasoningOutputTokens: 0,
-    totalTokens: 170,
-  })
   expect(latest.tokenUsage).toEqual({
     inputTokens: 130,
     cachedInputTokens: 50,
