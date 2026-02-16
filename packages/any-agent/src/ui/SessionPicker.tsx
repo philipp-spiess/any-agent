@@ -5,15 +5,13 @@ import os from "node:os";
 import path from "node:path";
 import fs from "node:fs";
 import type { SessionSummary } from "../codex";
-import {
-  CODEX_BRAND_COLOR,
-  codexSessionToUnifiedTranscript,
-} from "../codex";
+import { CODEX_BRAND_COLOR, codexSessionToUnifiedTranscript } from "../codex";
 import {
   CLAUDE_CODE_BRAND_COLOR,
   claudeCodeSessionToUnifiedTranscript,
 } from "../claudecode";
 import { formatUsd } from "../pricing";
+import { transcriptToMarkdown } from "../markdown";
 
 const HEADER_FOOTPRINT = 2;
 const STATUS_LINE_FOOTPRINT = 2;
@@ -174,8 +172,8 @@ export const SessionPicker: React.FC<SessionPickerProps> = ({
       return;
     }
 
-    // Check for Ctrl+Enter via raw escape sequence
-    if (input === "[27;5;13~") {
+    // Export transcript on 'T' key
+    if (input === "t" || input === "T") {
       const session = sessions[highlightedIndex];
       if (session) {
         const transcript =
@@ -196,11 +194,20 @@ export const SessionPicker: React.FC<SessionPickerProps> = ({
           .toISOString()
           .replace(/:/g, "-")
           .replace(/\..+/, "");
-        const filename = `transcript-${timestamp}.json`;
-        const filePath = path.join(tmpDir, filename);
+        const base = `transcript-${timestamp}`;
+        const jsonPath = path.join(tmpDir, `${base}.json`);
+        const mdPath = path.join(tmpDir, `${base}.md`);
 
-        fs.writeFileSync(filePath, JSON.stringify(transcript, null, 2), "utf-8");
-        console.error(`Saved transcript to: ${filePath}`);
+        fs.writeFileSync(
+          jsonPath,
+          JSON.stringify(transcript, null, 2),
+          "utf-8"
+        );
+        console.error(`Saved transcript to: ${jsonPath}`);
+
+        const markdown = transcriptToMarkdown(transcript);
+        fs.writeFileSync(mdPath, markdown, "utf-8");
+        console.error(`Saved transcript to: ${mdPath}`);
       }
       return;
     }
@@ -576,6 +583,9 @@ const StatusLine: React.FC<StatusLineProps> = ({
       <Text color={HEADER_COLOR}> │ </Text>
       <Text color={KEY_COLOR}>⇥ </Text>
       <Text>toggle yolo mode</Text>
+      <Text color={HEADER_COLOR}> │ </Text>
+      <Text color={KEY_COLOR}>T </Text>
+      <Text>export transcript</Text>
     </Box>
   );
 };
